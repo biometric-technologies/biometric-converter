@@ -563,10 +563,11 @@ void ansi2fmr(ANSI_NIST *ansi_nist, struct finger_minutiae_record **fmr, struct 
 void
 usage() {
     printf(
-            "usage:\n\tconvert -i <wsqfile> -o <resfile> -ot ISO \n"
+            "usage:\n\tconvert -i <wsqfile> -o <resfile> -ot ISO [-v] \n"
             "\t\t -i:  Specifies the WSQ input file\n"
             "\t\t -o:  Specifies the output file\n"
             "\t\t -t:  Specifies the type of output file (available types: ISO, ANSI)\n"
+            "\t\t -v:  Verify template before saving (default: false)\n"
     );
 }
 
@@ -1095,10 +1096,10 @@ create_type13(RECORD **anrecord, struct finger_view_minutiae_record *fvmr,
 }
 
 void
-get_options(int argc, char *argv[], char **in, char **out, char **type) {
+get_options(int argc, char *argv[], char **in, char **out, char **type, int *validate) {
     char ch;
-
-    while ((ch = getopt(argc, argv, "i:o:t:")) != -1) {
+    *validate = 0;
+    while ((ch = getopt(argc, argv, "i:o:t:v:")) != -1) {
         switch (ch) {
             case 'i':
                 *in = malloc(strlen(optarg) + 1);
@@ -1112,6 +1113,9 @@ get_options(int argc, char *argv[], char **in, char **out, char **type) {
                 *type = malloc(strlen(optarg) + 1);
                 strcpy(*type, optarg);
                 break;
+            case 'v':
+                *validate = 1;
+                break;
             case '?':
             default:
                 usage();
@@ -1119,7 +1123,7 @@ get_options(int argc, char *argv[], char **in, char **out, char **type) {
         }
     }
 
-    if (strlen(*in) == 0 || strlen(*out) == 0) {
+    if (strlen(*in) == 0 || strlen(*out) == 0 || strlen(*type) == 0) {
         usage();
         goto err_out;
     }
@@ -1132,7 +1136,8 @@ get_options(int argc, char *argv[], char **in, char **out, char **type) {
 int main(int argc, char *argv[]) {
 
     char *input_file, *output_file, *output_type;
-    get_options(argc, argv, &input_file, &output_file, &output_type);
+    int validate;
+    get_options(argc, argv, &input_file, &output_file, &output_type, &validate);
 
     unsigned char *idata;
     int img_type;
@@ -1191,6 +1196,7 @@ int main(int argc, char *argv[]) {
     if (new_fvmr(FMR_STD_ANSI, &fvmr) != 0)
         ALLOC_ERR_EXIT("FVMR");
     add_fvmr_to_fmr(fvmr, fmr);
+    fvmr->impression_type = 0;
 
     ansi2fmr(ansi_nist, &fmr, &fvmr);
     free_ANSI_NIST(ansi_nist);
@@ -1215,6 +1221,9 @@ int main(int argc, char *argv[]) {
         COPY_FMR(ofmr, fmr);
         COPY_FVMR(ofvmr, fvmr);
     }
+
+    if (validate == 1 && validate_fvmr(fvmr) != VALIDATE_OK)
+        ERR_EXIT("Validation failed");
 
     if (write_fmr(fmr_fp, fmr) != 0) {
         fclose(fmr_fp);
