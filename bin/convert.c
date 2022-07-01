@@ -248,8 +248,8 @@ init_fmr(struct finger_minutiae_record *fmr, ANSI_NIST *ansi_nist, int idc) {
     strcpy(fmr->spec_version, FMR_ANSI_SPEC_VERSION);
     fmr->record_length = FMR_ANSI_SMALL_HEADER_LENGTH;
     fmr->record_length_type = FMR_ANSI_SMALL_HEADER_TYPE;
-    fmr->product_identifier_owner = 0; // XXX: replace with something valid?
-    fmr->product_identifier_type = 0; // XXX: replace with something valid?
+    fmr->product_identifier_owner = 1; // XXX: replace with something valid?
+    fmr->product_identifier_type = 1; // XXX: replace with something valid?
     fmr->scanner_id = 0;
     fmr->compliance = 0;
 
@@ -313,6 +313,9 @@ init_fvmr(struct finger_view_minutiae_record *fvmr, RECORD *anrecord) {
         ERR_OUT("IMP_ID field not found");
     fvmr->impression_type = (unsigned char)
             strtol((char *) field->subfields[0]->items[0]->value, NULL, 10);
+
+    // What it should be set to?
+    fvmr->impression_type = 0;
 
     /*** Finger quality                 ***/
     // XXX: What should the overall finger quality be set to?
@@ -513,18 +516,16 @@ init_fvmr(struct finger_view_minutiae_record *fvmr, RECORD *anrecord) {
     return -1;
 }
 
-void ansi2fmr(ANSI_NIST *ansi_nist, struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr) {
+void ansi2fmr(ANSI_NIST *ansi_nist, struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr,
+              int ppi) {
 
     FIELD *field;
     int i;
     int idc;
     int idx;
-    int type9_count;
 
-    type9_count = 0;
     for (i = 1; i < ansi_nist->num_records; i++) {
         if (ansi_nist->records[i]->type == TYPE_9_ID) {
-            type9_count++;
 
             /*** Image designation character   ***/
             if (lookup_ANSI_NIST_field(&field, &idx, IDC_ID,
@@ -546,6 +547,8 @@ void ansi2fmr(ANSI_NIST *ansi_nist, struct finger_minutiae_record **fmr, struct 
             if (init_fvmr(*fvmr, ansi_nist->records[i]) != 0)
                 ERR_OUT("Could not convert Type-9 record");
 
+            (*fmr)->x_resolution = ppi;
+            (*fmr)->y_resolution = ppi;
             (*fmr)->num_views++;
             (*fmr)->record_length += FVMR_HEADER_LENGTH +
                                      (FMD_DATA_LENGTH * (*fvmr)->number_of_minutiae);
@@ -563,7 +566,7 @@ void ansi2fmr(ANSI_NIST *ansi_nist, struct finger_minutiae_record **fmr, struct 
 void
 usage() {
     printf(
-            "usage:\n\tconvert -i <wsqfile> -o <resfile> -t ISO [-v] \n"
+            "usage:\n\tconvert -i <wsqfile> -o <resfile> -t <outtype> [-v] \n"
             "\t\t -i:  Specifies the WSQ input file\n"
             "\t\t -o:  Specifies the output file\n"
             "\t\t -t:  Specifies the type of output file (available types: ISO, ANSI)\n"
@@ -1136,25 +1139,22 @@ get_options(int argc, char *argv[], char **in, char **out, char **type, int *val
     exit(EXIT_FAILURE);
 }
 
-int main(int argc, char *argv[]) {
-
-    char *input_file, *output_file, *output_type;
-    int validate;
-    get_options(argc, argv, &input_file, &output_file, &output_type, &validate);
-
-    unsigned char *idata;
-    int img_type;
-    int ilen, iw, ih, id, ippi;
-    double ippmm;
-
-    if (read_and_decode_grayscale_image(input_file, &img_type, &idata, &ilen, &iw, &ih, &id, &ippi) != 0)
+void read_wsq_image(char *input_file,
+                    unsigned char **idata,
+                    int *img_type,
+                    int *ilen, int *iw, int *ih, int *id, int *ippi,
+                    double *ippmm) {
+    if (read_and_decode_grayscale_image(input_file, img_type, idata, ilen, iw, ih, id, ippi) != 0)
         ERR_EXIT("cannot open input image file");
 
-    if (ippi == UNDEFINED)
-        ippmm = DEFAULT_PPI / (double) MM_PER_INCH;
+    if (*ippi == UNDEFINED)
+        *ippmm = DEFAULT_PPI / (double) MM_PER_INCH;
     else
-        ippmm = ippi / (double) MM_PER_INCH;
+        *ippmm = *ippi / (double) MM_PER_INCH;
+}
 
+void read_minutiae_to_ansi_fmr(unsigned char *idata, int iw, int ih, int id, int ippi, double ippmm,
+                               struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr) {
     unsigned char *bdata;
     int bw, bh, bd;
     int *direction_map, *low_contrast_map, *low_flow_map;
@@ -1191,49 +1191,73 @@ int main(int argc, char *argv[]) {
     free_minutiae(minutiae);
     free(bdata);
 
+
+    if (new_fmr(FMR_STD_ANSI, fmr) != 0)
+        ALLOC_ERR_EXIT("FMR");
+    if (new_fvmr(FMR_STD_ANSI, fvmr) != 0)
+        ALLOC_ERR_EXIT("FVMR");
+    add_fvmr_to_fmr(*fvmr, *fmr);
+
+    ansi2fmr(ansi_nist, fmr, fvmr, ippi);
+    free_ANSI_NIST(ansi_nist);
+}
+
+void convert_ansi2iso(struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr, int ippi) {
+    struct finger_minutiae_record *ofmr;
+    struct finger_view_minutiae_record *ofvmr;
+
+    if (new_fmr(FMR_STD_ISO, &ofmr) != 0)
+        ALLOC_ERR_EXIT("FMR");
+    if (new_fvmr(FMR_STD_ISO, &ofvmr) != 0)
+        ALLOC_ERR_EXIT("FVMR");
+    add_fvmr_to_fmr(ofvmr, ofmr);
+
+    COPY_FMR((*fmr), ofmr);
+    ofmr->record_length = FMR_ISO_HEADER_LENGTH;
+    ofmr->record_length_type = FMR_ISO_HEADER_TYPE;
+
+    unsigned int fmr_len;
+    ansi2iso_fvmr(*fvmr, ofvmr, &fmr_len, ippi, ippi);
+    ofmr->record_length = fmr_len;
+
+    *fmr = ofmr;
+    *fvmr = ofvmr;
+}
+
+void write_data_to_file(FILE *fmr_fp, struct finger_minutiae_record *fmr) {
+    if (write_fmr(fmr_fp, fmr) != 0) {
+        fclose(fmr_fp);
+        ERR_EXIT("Could not write finger minutiae record");
+    }
+    fclose(fmr_fp);
+}
+
+int main(int argc, char *argv[]) {
+    char *input_file, *output_file, *output_type;
+    int validate;
+    get_options(argc, argv, &input_file, &output_file, &output_type, &validate);
+
+    unsigned char *idata;
+    int img_type;
+    int ilen, iw, ih, id, ippi;
+    double ippmm;
+    read_wsq_image(input_file, &idata, &img_type,
+                   &ilen, &iw, &ih, &id, &ippi, &ippmm);
+
     struct finger_minutiae_record *fmr;
     struct finger_view_minutiae_record *fvmr;
-
-    if (new_fmr(FMR_STD_ANSI, &fmr) != 0)
-        ALLOC_ERR_EXIT("FMR");
-    if (new_fvmr(FMR_STD_ANSI, &fvmr) != 0)
-        ALLOC_ERR_EXIT("FVMR");
-    add_fvmr_to_fmr(fvmr, fmr);
-
-    ansi2fmr(ansi_nist, &fmr, &fvmr);
-    free_ANSI_NIST(ansi_nist);
+    read_minutiae_to_ansi_fmr(idata, iw, ih, id, ippi, ippmm, &fmr, &fvmr);
 
     FILE *fmr_fp = NULL;
     if ((fmr_fp = fopen(output_file, "wb")) == NULL)
         OPEN_ERR_EXIT(output_file);
 
     if (strcmp(output_type, "ISO") == 0) {
-        struct finger_minutiae_record *ofmr;
-        struct finger_view_minutiae_record *ofvmr;
-
-        if (new_fmr(FMR_STD_ISO, &ofmr) != 0)
-            ALLOC_ERR_EXIT("FMR");
-        if (new_fvmr(FMR_STD_ISO, &ofvmr) != 0)
-            ALLOC_ERR_EXIT("FVMR");
-        add_fvmr_to_fmr(fvmr, ofmr);
-
-        unsigned int fmr_len;
-        ansi2iso_fvmr(fvmr, ofvmr, &fmr_len, fmr->x_resolution, fmr->y_resolution);
-
-        COPY_FMR(ofmr, fmr);
-        COPY_FVMR(ofvmr, fvmr);
+        convert_ansi2iso(&fmr, &fvmr, ippi);
     }
-    fvmr->impression_type = 0;
 
-    if (validate == 1 && validate_fvmr(fvmr) != VALIDATE_OK)
-        ERR_EXIT("Validation failed");
-
-    if (write_fmr(fmr_fp, fmr) != 0) {
-        fclose(fmr_fp);
-        ERR_EXIT("Could not write finger minutiae record");
-    }
+    write_data_to_file(fmr_fp, fmr);
 
     printf("Converting from [WSQ] to [%s] successfully done\n", output_type);
-
     exit(EXIT_SUCCESS);
 }
