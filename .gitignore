@@ -7,3 +7,4 @@ out/
 !**/src/test/**/out/
 
 cmake-build-debug*
+exports
