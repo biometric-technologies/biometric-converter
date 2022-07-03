@@ -1,0 +1,3 @@
+[submodule "nist-biometric-image-software-nbis"]
+	path = nist-biometric-image-software-nbis
+	url = https://github.com/biometric-technologies/nist-biometric-image-software-nbis
