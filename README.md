@@ -150,6 +150,6 @@ questions may be addressed to the
 
 License
 -------
-Biometric Converter is released in the GNU PUB3 Licanse. See the
+Biometric Converter is released under the GNU PUB3 License. See the
 [LICENSE](https://github.com/biometric-technologies/biometric-converte/blob/master/LICENSE.md)
 for details.
