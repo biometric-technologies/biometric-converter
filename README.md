@@ -4,7 +4,7 @@ About
 -----
 Biometric Converter is software that converts fingerprint images of different formats (WSQ, JPEG,
 PNG, [ANSI 381](https://webstore.ansi.org/Standards/INCITS/ANSIINCITS3812004))
-to fingerminutia formats ([ANSI/INCITS 378](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=150619)
+to finger minutiae formats ([ANSI/INCITS 378](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=150619)
 and [ISO/IEC 29794-4](http://www.iso.org/iso/catalogue_detail.htm?csnumber=62791)).
 This repository serves as a formally recognized reference implementation of the
 international standard.
