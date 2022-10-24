@@ -2,19 +2,6 @@ cmake_minimum_required(VERSION 3.10.2)
 
 project(biometric_converter)
 
-set(CMAKE_C_FLAGS "-fPIC")
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/nbis/include)
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/nbis/lib)
-
-add_library(biomdi biomdi/biomdi.c)
-target_include_directories(biomdi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/biomdi/include)
-
-file(GLOB FMR_SRC fmr/*.c)
-add_library(fmr ${FMR_SRC})
-target_link_libraries(fmr PRIVATE biomdi)
-target_include_directories(fmr PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/fmr/include)
-
 add_library(converter SHARED lib/converter.h lib/converter.c)
 install(TARGETS converter DESTINATION lib)
 include(GenerateExportHeader)

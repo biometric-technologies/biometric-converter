@@ -663,432 +663,6 @@ create_type1(RECORD **anrecord) {
     return -1;
 }
 
-static int
-update_type1(ANSI_NIST *ansi_nist, RECORD *record, unsigned int type,
-             unsigned int idc) {
-    SUBFIELD *subfield = NULL;
-    FIELD *field = NULL;
-    ITEM *item = NULL;
-    int field_idx;
-    int saved_len;
-    char buf[8];
-
-    if (lookup_ANSI_NIST_field(&field, &field_idx, CNT_ID, record) == FALSE)
-        ERR_OUT("locating CNT field of Type-1 record");
-
-    // Save away the current length of the field so we can add
-    // the change in length to the record
-    saved_len = field->num_bytes;
-
-    // Create a new subfield to contain the new logical record identifier
-    snprintf(buf, sizeof(buf), "%d", type);
-    if (value2subfield(&subfield, buf) != 0)
-        ERR_OUT("creating new subfield");
-
-    // Add the second item to the subfield, the IDC
-    snprintf(buf, sizeof(buf), IDC_FMT, idc);
-    if (value2item(&item, buf) != 0)
-        ERR_OUT("creating new item");
-    if (append_ANSI_NIST_subfield(subfield, item) != 0)
-        ERR_OUT("appending item to subfield");
-
-    // Add the subfield to the field
-    if (append_ANSI_NIST_field(field, subfield) != 0)
-        ERR_OUT("adding subfield to field");
-
-    // Update the record length with the change in field length
-    record->num_bytes += field->num_bytes - saved_len;
-    if (update_ANSI_NIST_tagged_record_LEN(record) != 0)
-        goto err_out2;
-
-    // Update the sum of the Type-2 to Type-16 logical records, contained
-    // in the first subfield of the Type-1 record.
-    // The index numbeers are off-by-one.
-    if (increment_numeric_item(0,        // record index
-                               2,        // field index
-                               0,        // subfield index
-                               1,        // item index
-                               ansi_nist,    // ansi_nist record
-                               NULL) < 0)
-        goto err_out2;
-
-    return 0;
-
-    err_out:
-    if (item != NULL)
-        free(item);
-    if (subfield != NULL)
-        free(subfield);
-
-    return -1;
-
-    err_out2:    // This exit point doesn't free any memory because the
-    // fields have been shoved into the record
-    return -1;
-}
-
-static int
-create_type2(RECORD **anrecord, FILE *fp, unsigned int idc) {
-    FIELD *field = NULL;
-    SUBFIELD *subfield = NULL;
-    RECORD *lrecord;    // For local convenience
-    int field_num;
-    char buf[MAX_TYPE2_FIELD_SIZE + 1];
-    char *s;
-
-    if (new_ANSI_NIST_record(anrecord, TYPE_2_ID) != 0)
-        ALLOC_ERR_EXIT("Type-2 Record");
-
-    lrecord = *anrecord;
-
-    /*** 2.001 - Length                                    ***/
-    // Set to 0 now, will recalculate later
-    APPEND_TYPE2_FIELD(lrecord, LEN_ID, "0");
-
-    /*** 2.002 - IDC value                                 ***/
-    snprintf(buf, sizeof(buf), IDC_FMT, idc);
-    APPEND_TYPE2_FIELD(lrecord, IDC_ID, buf);
-
-    while (1) {
-        // Read the field number, followed by single whitespace char,
-        // followed by the string to place in the field.
-        if (fscanf(fp, "%d", &field_num) < 0) {
-            if (feof(fp)) {
-                break;
-            } else {
-                ERR_OUT("reading Type-2 buf file.\n");
-            }
-        }
-        fgetc(fp);    // skip the single whitespace char
-        s = fgets(buf, MAX_TYPE2_FIELD_SIZE, fp);
-        buf[strlen(buf) - 1] = '\0';
-        if (s == NULL) {
-            if (feof(fp)) {
-                break;
-            } else {
-                ERR_OUT("reading Type-2 buf file.\n");
-            }
-        }
-        /*** 2.xxx - User-defined field   ***/
-        if (value2subfield(&subfield, buf) != 0)
-            ERR_OUT("creating new Type-2 subfield");
-        if (new_ANSI_NIST_field(&field, TYPE_2_ID, field_num) != 0)
-            ERR_OUT("creating new Type-2 field");
-        if (append_ANSI_NIST_field(field, subfield) != 0)
-            ERR_OUT("appending Type-2 subfield");
-        if (append_ANSI_NIST_record(lrecord, field) != 0)
-            ERR_OUT("appending Type-2 field");
-
-    }
-
-    // Calculate and update the record length field
-    if (update_ANSI_NIST_tagged_record_LEN(lrecord) != 0)
-        ERR_OUT("updating Type-2 record length");
-
-    return 0;
-
-    err_out:
-    return -1;
-}
-
-static int
-create_type9(RECORD **anrecord, struct finger_view_minutiae_record *fvmr,
-             unsigned int idc) {
-    FIELD *field = NULL;
-    SUBFIELD *subfield = NULL;
-    ITEM *item = NULL;
-    RECORD *lrecord;    // For local convenience
-    struct finger_minutiae_data **fmds = NULL;
-    struct ridge_count_data **rcds = NULL;
-    struct core_data **cds;
-    struct delta_data **dds;
-    char buf[16];
-    int mincnt, minidx, rdgcnt;
-    int cnt, i;
-    unsigned int x, y;
-
-    if (new_ANSI_NIST_record(anrecord, TYPE_9_ID) != 0)
-        ALLOC_ERR_EXIT("Type-9 Record");
-
-    lrecord = *anrecord;
-
-    /*** 9.001 - Length                                    ***/
-    // Set to 0 now, will recalculate later
-    APPEND_TYPE9_FIELD(lrecord, LEN_ID, "0");
-
-    /*** 9.002 - IDC value                                 ***/
-    snprintf(buf, sizeof(buf), IDC_FMT, idc);
-    APPEND_TYPE9_FIELD(lrecord, IDC_ID, buf);
-
-    /*** 9.003 - Impression type                           ***/
-    CRW(fvmr->impression_type, MIN_TABLE_5_CODE, MAX_TABLE_5_CODE,
-        "Impression type");
-    snprintf(buf, sizeof(buf), "%d", fvmr->impression_type);
-    APPEND_TYPE9_FIELD(lrecord, IMP_ID, buf);
-
-    /*** 9.004 - Minutiae format                           ***/
-    APPEND_TYPE9_FIELD(lrecord, FMT_ID, STD_STR);
-
-    /*** 9.005 - Originating fingerprint reading system    ***/
-    if (value2subfield(&subfield, "EXISTING IMAGE") != 0)
-        ERR_OUT("creating Type-9 subfield");
-    if (value2item(&item, AUTO_STR) != 0)
-        ERR_OUT("creating Type-9 item");
-    if (append_ANSI_NIST_subfield(subfield, item) != 0)
-        ERR_OUT("appending Type-9 item");
-    if (new_ANSI_NIST_field(&field, TYPE_9_ID, OFR_ID) != 0)
-        ERR_OUT("creating Type-9 field");
-    if (append_ANSI_NIST_field(field, subfield) != 0)
-        ERR_OUT("appending Type-9 subfield");
-    if (append_ANSI_NIST_record(lrecord, field) != 0)
-        ERR_OUT("appending Type-9 field");
-
-    /*** 9.006 - Finger position                           ***/
-    snprintf(buf, sizeof(buf), "%02d", fvmr->finger_number);
-    APPEND_TYPE9_FIELD(lrecord, FGP2_ID, buf);
-
-    /*** 9.007 - Fingerprint pattern classification        ***/
-    if (value2subfield(&subfield, TBL_STR) != 0)
-        ERR_OUT("creating Type-9 subfield");
-    if (value2item(&item, "UN") != 0)
-        ERR_OUT("creating Type-9 item");
-    if (append_ANSI_NIST_subfield(subfield, item) != 0)
-        ERR_OUT("appending Type-9 item");
-    if (new_ANSI_NIST_field(&field, TYPE_9_ID, FPC_ID) != 0)
-        ERR_OUT("creating Type-9 field");
-    if (append_ANSI_NIST_field(field, subfield) != 0)
-        ERR_OUT("appending Type-9 subfield");
-    if (append_ANSI_NIST_record(lrecord, field) != 0)
-        ERR_OUT("appending Type-9 field");
-
-    /*** 9.008 - Core position                             ***/
-    cnt = get_core_count(fvmr);
-    if (cnt > 0) {
-        if (new_ANSI_NIST_field(&field, TYPE_9_ID, CRP_ID) != 0)
-            ERR_OUT("allocating field");
-
-        cds = (struct core_data **) malloc(
-                cnt * sizeof(struct core_data **));
-        if (cds == NULL)
-            ALLOC_ERR_EXIT("Core data");
-
-        if (get_cores(fvmr, cds) != cnt)
-            ERR_OUT("retrieving core data");
-
-        for (i = 0; i < cnt; i++) {
-            convert_xy(fvmr->fmr->x_image_size,
-                       fvmr->fmr->y_image_size,
-                       fvmr->fmr->x_resolution,
-                       fvmr->fmr->y_resolution,
-                       cds[i]->x_coord,
-                       cds[i]->y_coord,
-                       &x, &y);
-            snprintf(buf, sizeof(buf), "%04u%04u", x, y);
-            if (value2subfield(&subfield, buf) != 0)
-                ERR_OUT("creating subfield");
-            if (append_ANSI_NIST_field(field, subfield) != 0)
-                ERR_OUT("appending subfield");
-        }
-        if (append_ANSI_NIST_record(lrecord, field) != 0)
-            ERR_OUT("adding field to record");
-
-    } else if (cnt < 0)
-        ERR_OUT("getting core record count");
-
-    /*** 9.009 - Delta(s) position                         ***/
-    cnt = get_delta_count(fvmr);
-    if (cnt > 0) {
-        if (new_ANSI_NIST_field(&field, TYPE_9_ID, DLT_ID) != 0)
-            ERR_OUT("creating Type-9 field");
-
-        dds = (struct delta_data **) malloc(
-                cnt * sizeof(struct delta_data **));
-        if (dds == NULL)
-            ALLOC_ERR_EXIT("Delta data");
-
-        if (get_deltas(fvmr, dds) != cnt)
-            ERR_OUT("retrieving delta data");
-
-        for (i = 0; i < cnt; i++) {
-            convert_xy(fvmr->fmr->x_image_size,
-                       fvmr->fmr->y_image_size,
-                       fvmr->fmr->x_resolution,
-                       fvmr->fmr->y_resolution,
-                       dds[i]->x_coord,
-                       dds[i]->y_coord,
-                       &x, &y);
-            snprintf(buf, sizeof(buf), "%04u%04u", x, y);
-            if (value2subfield(&subfield, buf) != 0)
-                ERR_OUT("creating subfield");
-            if (append_ANSI_NIST_field(field, subfield) != 0)
-                ERR_OUT("appending subfield");
-        }
-        if (append_ANSI_NIST_record(lrecord, field) != 0)
-            ERR_OUT("adding field to record");
-
-    } else if (cnt < 0)
-        ERR_OUT("getting delta record count");
-
-    /*** 9.010 - Number of minutiae                        ***/
-    mincnt = get_fmd_count(fvmr);
-    if (mincnt < 0)
-        ERR_OUT("getting minutiae count");
-
-    snprintf(buf, sizeof(buf), "%d", mincnt);
-    APPEND_TYPE9_FIELD(lrecord, MIN_ID, buf);
-
-    /*** 9.011 - Minutiae ridge count indicator            ***/
-    rdgcnt = get_rcd_count(fvmr);
-    if (rdgcnt > 0) {
-        rcds = (struct ridge_count_data **) malloc(
-                rdgcnt * sizeof(struct ridge_count_data **));
-        if (rcds == NULL)
-            ALLOC_ERR_EXIT("Ridge Count data");
-
-        if (get_rcds(fvmr, rcds) != rdgcnt)
-            ERR_OUT("retrieving ridge count data");
-
-        APPEND_TYPE9_FIELD(lrecord, RDG_ID, "1");
-    } else if (rdgcnt < 0)
-        ERR_OUT("getting ridge record count");
-    else
-        APPEND_TYPE9_FIELD(lrecord, RDG_ID, "0");
-
-    /*** 9.012 - Minutiae and ridge count data             ***/
-    fmds = (struct finger_minutiae_data **) malloc(
-            mincnt * sizeof(struct finger_minutiae_data **));
-    if (fmds == NULL)
-        ALLOC_ERR_EXIT("Finger Minutiae data");
-
-    if (get_fmds(fvmr, fmds) != mincnt)
-        ERR_OUT("retrieving minutiae data");
-
-    if (new_ANSI_NIST_field(&field, TYPE_9_ID, MRC_ID) != 0)
-        ERR_OUT("creating Type-9 field");
-
-    for (minidx = 0; minidx < mincnt; minidx++) {
-        unsigned int theta, rdgidx, minqual;
-        char mintype;
-        int idxnum = minidx + 1;
-
-        // Index number
-        snprintf(buf, sizeof(buf), "%03d", idxnum);
-        if (value2subfield(&subfield, buf) != 0)
-            ERR_OUT("creating Type-9 subfield");
-
-        // X, Y, and theta values
-        convert_xy(fvmr->fmr->x_image_size, fvmr->fmr->y_image_size,
-                   fvmr->fmr->x_resolution, fvmr->fmr->y_resolution,
-                   fmds[minidx]->x_coord, fmds[minidx]->y_coord,
-                   &x, &y);
-        convert_theta(fmds[minidx]->angle, &theta);
-        snprintf(buf, sizeof(buf), "%04u%04u%03u", x, y, theta);
-        if (value2item(&item, buf) != 0)
-            ERR_OUT("creating Type-9 item");
-        if (append_ANSI_NIST_subfield(subfield, item) != 0)
-            ERR_OUT("appending Type-9 item");
-
-        // Quality measure
-        convert_quality(fmds[minidx]->quality, &minqual);
-        snprintf(buf, sizeof(buf), "%u", minqual);
-        if (value2item(&item, buf) != 0)
-            ERR_OUT("creating Type-9 item");
-        if (append_ANSI_NIST_subfield(subfield, item) != 0)
-            ERR_OUT("appending Type-9 item");
-
-        // Minutia type designation
-        convert_type(fmds[minidx]->type, &mintype);
-        snprintf(buf, sizeof(buf), "%c", mintype);
-        if (value2item(&item, buf) != 0)
-            ERR_OUT("creating Type-9 item");
-        if (append_ANSI_NIST_subfield(subfield, item) != 0)
-            ERR_OUT("appending Type-9 item");
-
-        // Ridge count data: If the one of the index numbers
-        // in the record matches the minutia index, then add that
-        // ridge count data to the Type-9 record, using the index
-        // number that is the 'other'.
-        for (rdgidx = 0; rdgidx < rdgcnt; rdgidx++) {
-            if ((rcds[rdgidx]->index_one == idxnum) ||
-                (rcds[rdgidx]->index_two == idxnum)) {
-                snprintf(buf, sizeof(buf), "%u,%u",
-                         (rcds[rdgidx]->index_one == idxnum) ?
-                         rcds[rdgidx]->index_two :
-                         rcds[rdgidx]->index_one,
-                         rcds[rdgidx]->count);
-
-                if (value2item(&item, buf) != 0)
-                    ERR_OUT("creating Type-9 item");
-                if (append_ANSI_NIST_subfield(subfield, item) != 0)
-                    ERR_OUT("appending Type-9 item");
-            }
-        }
-
-        if (append_ANSI_NIST_field(field, subfield) != 0)
-            ERR_OUT("appending Type-9 subfield");
-    }
-    free(fmds);
-    if (append_ANSI_NIST_record(lrecord, field) != 0)
-        ERR_OUT("appending Type-9 field");
-    /*** End of minutiae and ridge count                 */
-
-    // Calculate and update the record length field
-    if (update_ANSI_NIST_tagged_record_LEN(lrecord) != 0)
-        ERR_OUT("updating Type-9 record length");
-
-    return 0;
-
-    err_out:
-    fprintf(stderr, "Error creating Type-9 record\n");
-    if (item != NULL)
-        free_ANSI_NIST_item(item);
-    if (subfield != NULL)
-        free_ANSI_NIST_subfield(subfield);
-    if (field != NULL)
-        free_ANSI_NIST_field(field);
-    if (lrecord != NULL)
-        free_ANSI_NIST_record(lrecord);
-    if (fmds != NULL)
-        free(fmds);
-
-    return -1;
-}
-
-static int
-create_type13(RECORD **anrecord, struct finger_view_minutiae_record *fvmr,
-              FILE *fp, unsigned int idc) {
-    char fn[MAXPATHLEN];
-    unsigned char *imgdata;
-    int imgsize;
-
-    /*** 13.999 - Image data                               ***/
-    // fp parameter is for the file containing the list of
-    // image files
-    if (fscanf(fp, "%s", fn) < 0)
-        ERR_OUT("reading image list file.\n");
-
-    printf("reading image from file %s\n", fn);
-    if (read_binary_image_data(fn, &imgdata, &imgsize) != 0)
-        ERR_OUT("reading image data");
-
-    if (image2type_13(anrecord, imgdata, imgsize,
-                      fvmr->fmr->x_image_size, fvmr->fmr->y_image_size,
-                      8, (double) (fvmr->fmr->x_resolution / 10.0),
-                      "NONE",    // Compression String
-                      idc, fvmr->impression_type,
-                      "NIST 894.03") != 0)
-        ERR_OUT("converting image to Type-13 record");
-
-    // Calculate and update the record length field
-    if (update_ANSI_NIST_tagged_record_LEN(*anrecord) != 0)
-        ERR_OUT("updating Type-13 record length");
-
-    return 0;
-
-    err_out:
-    return -1;
-}
-
 int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
                           unsigned char **odata, int *olen,
                           int *ow, int *oh, int *od, int *oppi) {
@@ -1363,7 +937,253 @@ void convert_ansi2iso(struct finger_minutiae_record **fmr, struct finger_view_mi
     *fvmr = ofvmr;
 }
 
-int convert(unsigned char *idata, int ilen, char *otype, unsigned char **odata, int *olen) {
+void convert_ansi2iso_c(struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr, int ippi) {
+    struct finger_minutiae_record *ofmr;
+    struct finger_view_minutiae_record *ofvmr;
+
+    if (new_fmr(FMR_STD_ISO_NORMAL_CARD, &ofmr) != 0)
+        ALLOC_ERR_EXIT("FMR");
+    if (new_fvmr(FMR_STD_ISO_NORMAL_CARD, &ofvmr) != 0)
+        ALLOC_ERR_EXIT("FVMR");
+    add_fvmr_to_fmr(ofvmr, ofmr);
+
+    COPY_FMR((*fmr), ofmr);
+    ofmr->record_length = FMR_ISO_HEADER_LENGTH;
+    ofmr->record_length_type = FMR_ISO_HEADER_TYPE;
+
+    unsigned int fmr_len;
+    ansi2iso_fvmr(*fvmr, ofvmr, &fmr_len, ippi, ippi);
+    ofmr->record_length = fmr_len;
+
+    *fmr = ofmr;
+    *fvmr = ofvmr;
+}
+
+void convert_ansi2iso_cc(struct finger_minutiae_record **fmr, struct finger_view_minutiae_record **fvmr, int ippi) {
+    struct finger_minutiae_record *ofmr;
+    struct finger_view_minutiae_record *ofvmr;
+
+    if (new_fmr(FMR_STD_ISO_COMPACT_CARD, &ofmr) != 0)
+        ALLOC_ERR_EXIT("FMR");
+    if (new_fvmr(FMR_STD_ISO_COMPACT_CARD, &ofvmr) != 0)
+        ALLOC_ERR_EXIT("FVMR");
+    add_fvmr_to_fmr(ofvmr, ofmr);
+
+    COPY_FMR((*fmr), ofmr);
+    ofmr->record_length = FMR_ISO_HEADER_LENGTH;
+    ofmr->record_length_type = FMR_ISO_HEADER_TYPE;
+
+    unsigned int fmr_len;
+    ansi2isocc_fvmr(*fvmr, ofvmr, &fmr_len, ippi, ippi);
+    ofmr->record_length = fmr_len;
+
+    *fmr = ofmr;
+    *fvmr = ofvmr;
+}
+
+static int
+copy_without_conversion(FMR *ifmr, FMR *ofmr, int fmr_type) {
+    FVMR *ofvmr;
+    FVMR **ifvmrs = NULL;
+    FMD **ifmds = NULL;
+    FMD *ofmd;
+    int r, rcount, m, mcount;
+    int retval;
+
+    retval = -1;            /* Assume failure, for now */
+
+    COPY_FMR(ifmr, ofmr);
+
+    /* Get all of the finger view records */
+    rcount = get_fvmr_count(ifmr);
+    if (rcount > 0) {
+        ifvmrs = (FVMR **) malloc(rcount * sizeof(FVMR *));
+        if (ifvmrs == NULL)
+            ALLOC_ERR_OUT("FVMR Array");
+        if (get_fvmrs(ifmr, ifvmrs) != rcount)
+            ERR_OUT("getting FVMRs from FMR");
+
+        for (r = 0; r < rcount; r++) {
+            if (new_fvmr(fmr_type, &ofvmr) < 0)
+                ALLOC_ERR_RETURN("Output FVMR");
+
+            COPY_FVMR(ifvmrs[r], ofvmr);
+            mcount = get_fmd_count(ifvmrs[r]);
+            if (mcount != 0) {
+                ifmds = (FMD **) malloc(mcount * sizeof(FMD *));
+                if (ifmds == NULL)
+                    ALLOC_ERR_RETURN("FMD array");
+                if (get_fmds(ifvmrs[r], ifmds) != mcount)
+                    ERR_OUT("getting FMDs from FVMR");
+
+                for (m = 0; m < mcount; m++) {
+                    if (new_fmd(FMR_STD_ISO, &ofmd, m) != 0)
+                        ALLOC_ERR_RETURN("Output FMD");
+                    COPY_FMD(ifmds[m], ofmd);
+                    add_fmd_to_fvmr(ofmd, ofvmr);
+                }
+            }
+
+            /* Subtract off the length of the extended data block,
+             * if present, because we don't copy extended data yet.
+             */
+            if (ifvmrs[r]->extended != NULL) {
+                ofmr->record_length -=
+                        ifvmrs[r]->extended->block_length;
+
+            }
+            add_fvmr_to_fmr(ofvmr, ofmr);
+            // XXX Copy the FEDB to the output fmr
+        }
+
+    } else {
+        if (rcount == 0)
+            ERR_OUT("there are no FVMRs in the input FMR");
+        else
+            ERR_OUT("retrieving FVMRs from input FMR");
+    }
+    retval = 0;
+
+    err_out:
+    if (ifvmrs != NULL)
+        free(ifvmrs);
+    if (ifmds != NULL)
+        free(ifmds);
+    return (retval);
+}
+
+/*
+ * Copy an FMR with conversion.
+ */
+static int
+copy_with_conversion(FMR *ifmr, FMR *ofmr, int in_type, int out_type) {
+    FVMR *ofvmr;
+    FVMR **ifvmrs = NULL;
+    int r, rcount;
+    unsigned int fmr_len, fvmr_len;
+    int rc, retval;
+    char *ver;
+
+    retval = -1;            /* Assume failure, for now */
+
+    if (in_type == out_type)
+        return (-1);
+
+    COPY_FMR(ifmr, ofmr);
+    switch (out_type) {
+        case FMR_STD_ANSI:
+            fmr_len = FMR_ANSI_SMALL_HEADER_LENGTH;
+            ver = FMR_ANSI_SPEC_VERSION;
+            break;
+        case FMR_STD_ANSI07:
+            fmr_len = FMR_ANSI07_HEADER_LENGTH;
+            ver = FMR_ANSI07_SPEC_VERSION;
+            break;
+        case FMR_STD_ISO:
+            fmr_len = FMR_ISO_HEADER_LENGTH;
+            ver = FMR_ISO_SPEC_VERSION;
+            break;
+    }
+
+    /* Fix up the output FMR header for those input types that don't
+     * have all the needed information.
+     */
+
+    if ((out_type == FMR_STD_ANSI) || (out_type == FMR_STD_ISO) ||
+        (out_type == FMR_STD_ANSI07))
+        if ((in_type == FMR_STD_ISO_NORMAL_CARD) ||
+            (in_type == FMR_STD_ISO_COMPACT_CARD)) {
+            strncpy(ofmr->format_id, FMR_FORMAT_ID,
+                    FMR_FORMAT_ID_LEN);
+            strncpy(ofmr->spec_version, ver,
+                    FMR_SPEC_VERSION_LEN);
+        }
+
+    /* Get all of the finger view records */
+    rcount = get_fvmr_count(ifmr);
+    if (rcount > 0) {
+        ifvmrs = (FVMR **) malloc(rcount * sizeof(FVMR *));
+        if (ifvmrs == NULL)
+            ALLOC_ERR_OUT("FVMR Array");
+        if (get_fvmrs(ifmr, ifvmrs) != rcount)
+            ERR_OUT("getting FVMRs from FMR");
+
+        for (r = 0; r < rcount; r++) {
+            if (new_fvmr(out_type, &ofvmr) < 0)
+                ALLOC_ERR_RETURN("Output FVMR");
+
+            rc = -1;
+            switch (in_type) {
+                case FMR_STD_ANSI07:
+                    /* The coord and resolution info is stored
+                     * in the FVMR; copy it to the FMR header,
+                     * using the first FVMR as the canonical set.
+                     */
+                    ofmr->x_image_size = ifvmrs[0]->x_image_size;
+                    ofmr->y_image_size = ifvmrs[0]->y_image_size;
+                    ofmr->x_resolution = ifvmrs[0]->x_resolution;
+                    ofmr->y_resolution = ifvmrs[0]->y_resolution;
+                case FMR_STD_ANSI:
+                    switch (out_type) {
+                        case FMR_STD_ISO:
+                        case FMR_STD_ISO_NORMAL_CARD:
+                            rc = ansi2iso_fvmr(ifvmrs[r], ofvmr,
+                                               &fvmr_len, ifmr->x_resolution,
+                                               ifmr->y_resolution);
+                            break;
+                        case FMR_STD_ISO_COMPACT_CARD:
+                            rc = ansi2isocc_fvmr(ifvmrs[r], ofvmr,
+                                                 &fvmr_len, ifmr->x_resolution,
+                                                 ifmr->y_resolution);
+                            break;
+                        default:
+                            ERR_OUT("Invalid output type");
+                    }
+                    break;
+
+                    /* XXX Eventually handle ISO->ISO conversions */
+                case FMR_STD_ISO:
+                    /* For ANSI07, the coord and resolution info
+                     * is copied by iso2ansi_fvmr().
+                     */
+                case FMR_STD_ISO_NORMAL_CARD:
+                    rc = iso2ansi_fvmr(ifvmrs[r], ofvmr, &fvmr_len,
+                                       ifmr->x_resolution, ifmr->y_resolution);
+                    break;
+                case FMR_STD_ISO_COMPACT_CARD:
+                    rc = isocc2ansi_fvmr(ifvmrs[r], ofvmr,
+                                         &fvmr_len, ifmr->x_resolution,
+                                         ifmr->y_resolution);
+                    break;
+            }
+            if (rc != 0)
+                ERR_OUT("Modifying FVMR");
+
+            fmr_len += fvmr_len;
+            // XXX Copy the FEDB to the output fmr
+            ofvmr->extended = NULL;
+            add_fvmr_to_fmr(ofvmr, ofmr);
+
+            fmr_len += FEDB_HEADER_LENGTH;
+        }
+
+    } else {
+        if (rcount == 0)
+            ERR_OUT("there are no FVMRs in the input FMR");
+        else
+            ERR_OUT("retrieving FVMRs from input FMR");
+    }
+
+    ofmr->record_length = fmr_len;
+    retval = 0;
+    err_out:
+    if (ifvmrs != NULL)
+        free(ifvmrs);
+    return (retval);
+}
+
+
+int img2fmr(unsigned char *idata, int ilen, char *otype, unsigned char **odata, int *olen) {
 
     unsigned char *imdata;
     int img_len;
@@ -1381,6 +1201,12 @@ int convert(unsigned char *idata, int ilen, char *otype, unsigned char **odata, 
     if (strcmp(otype, "ISO") == 0) {
         convert_ansi2iso(&fmr, &fvmr, ippi);
     }
+    if (strcmp(otype, "ISONC") == 0) {
+        convert_ansi2iso_c(&fmr, &fvmr, ippi);
+    }
+    if (strcmp(otype, "ISOCC") == 0) {
+        convert_ansi2iso_cc(&fmr, &fvmr, ippi);
+    }
 
     uint8_t *buf;
     BDB *bdb;
@@ -1389,6 +1215,76 @@ int convert(unsigned char *idata, int ilen, char *otype, unsigned char **odata, 
     INIT_BDB(bdb, buf, fmr->record_length);
 
     if (push_fmr(bdb, fmr) != WRITE_OK) {
+        fprintf(stderr, "could not push FMR\n");
+        exit(EXIT_FAILURE);
+    }
+
+    *odata = bdb->bdb_start;
+    *olen = bdb->bdb_size;
+
+    return 0;
+}
+
+static int
+str_to_type(char *stdstr) {
+    if (strcmp(stdstr, "ANSI") == 0)
+        return (FMR_STD_ANSI);
+    if (strcmp(stdstr, "ISO") == 0)
+        return (FMR_STD_ISO);
+    if (strcmp(stdstr, "ISONC") == 0)
+        return (FMR_STD_ISO_NORMAL_CARD);
+    if (strcmp(stdstr, "ISOCC") == 0)
+        return (FMR_STD_ISO_COMPACT_CARD);
+    return (-1);
+}
+
+int fmr2fmr(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
+            char *in_type_str, char *out_type_str) {
+    fmr2fmr_iso_card(idata, ilen, odata, olen, in_type_str, out_type_str, 0, 0);
+}
+
+int fmr2fmr_iso_card(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
+                     char *in_type_str, char *out_type_str, int iso_c_xres, int iso_c_yres) {
+
+    BDB *rbdb;
+    rbdb = (BDB *) malloc(sizeof(BDB));
+    INIT_BDB(rbdb, idata, ilen);
+
+    struct finger_minutiae_record *ifmr;
+    struct finger_minutiae_record *ofmr;
+
+    if (scan_fmr(rbdb, ifmr) != READ_OK) {
+        fprintf(stderr, "Could not read FMR from file.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int in_type = str_to_type(in_type_str);
+    int out_type = str_to_type(out_type_str);
+
+    /* ISO card formats have no input resolution, so set it here
+	 * from the input options.
+	 */
+    unsigned short iso_xres, iso_yres;
+    if ((in_type == FMR_STD_ISO_NORMAL_CARD) ||
+        (in_type == FMR_STD_ISO_COMPACT_CARD)) {
+        ifmr->x_resolution = iso_c_xres;
+        ifmr->y_resolution = iso_c_yres;
+    }
+    /* If the input and output file types are the same,
+     * do a straight copy.
+     */
+    if (in_type == out_type)
+        copy_without_conversion(ifmr, ofmr, in_type);
+    else
+        copy_with_conversion(ifmr, ofmr, in_type, out_type);
+
+    uint8_t *buf;
+    BDB *bdb;
+    buf = (uint8_t *) malloc(ofmr->record_length);
+    bdb = (BDB *) malloc(sizeof(BDB));
+    INIT_BDB(bdb, buf, ofmr->record_length);
+
+    if (push_fmr(bdb, ofmr) != WRITE_OK) {
         fprintf(stderr, "could not push FMR\n");
         exit(EXIT_FAILURE);
     }

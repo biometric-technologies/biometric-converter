@@ -18,20 +18,23 @@
 void
 usage() {
     printf(
-            "usage:\n\tconvert -i <imagefile> -o <resfile> -t <outtype> [-v] \n"
-            "\t\t -i:  Specifies the input file (ANSI-381, WSQ, JPEG) \n"
+            "usage:\n\tconvert -i <input file> -ti <input type> -o <output file> -to <output type> [-v] \n"
+            "\t\t -i:  Specifies the input file path \n"
+            "\t\t -ti:  Specifies the type of the input file (image: WSQ, JPEG, IHEAD, JPEG2000, PNG, ANSI-381 or minutiae: ISO, ISOC, ISOCC, ANSI) \n"
             "\t\t -o:  Specifies the output file path\n"
-            "\t\t -t:  Specifies the type of output file (available types: ISO, ISOC, ISOCC, ANSI)\n"
+            "\t\t -to:  Specifies the type of the output file (ISO, ISOC, ISOCC, ANSI)\n"
     );
 }
 
 void
-get_options(int argc, char *argv[], char **in, char **out, char **type, int *validate) {
+get_options(int argc, char *argv[], char **in, char **itype, char **out, char **otype, int *validate) {
     char ch;
+    char pch;
     *validate = 0;
     *in = "";
     *out = "";
-    *type = "";
+    *itype = "";
+    *otype = "";
     while ((ch = getopt(argc, argv, "i:o:t:v")) != -1) {
         switch (ch) {
             case 'i':
@@ -43,9 +46,20 @@ get_options(int argc, char *argv[], char **in, char **out, char **type, int *val
                 strcpy(*out, optarg);
                 break;
             case 't':
-                *type = malloc(strlen(optarg) + 1);
-                strcpy(*type, optarg);
-                break;
+                pch = *(char *) optarg;
+                switch (pch) {
+                    case 'i':
+                        *itype = malloc(strlen(optarg) + 1);
+                        strcpy(*itype, optarg);
+                        break;
+                    case 'o':
+                        *otype = malloc(strlen(optarg) + 1);
+                        strcpy(*otype, optarg);
+                        break;
+                    default:
+                        usage();
+                        break;
+                }
             case 'v':
                 *validate = 1;
                 break;
@@ -56,7 +70,7 @@ get_options(int argc, char *argv[], char **in, char **out, char **type, int *val
         }
     }
 
-    if (strlen(*in) == 0 || strlen(*out) == 0 || strlen(*type) == 0) {
+    if (strlen(*in) == 0 || strlen(*out) == 0 || strlen(*itype) == 0 || strlen(*otype) == 0) {
         usage();
         goto err_out;
     }
@@ -76,28 +90,42 @@ void write_data_to_file(FILE *fmr_fp, struct finger_minutiae_record *fmr) {
 }
 
 int main(int argc, char *argv[]) {
-    char *input_file, *output_file, *output_type;
+    char *input_file, *input_type, *output_file, *output_type;
     int validate;
 
-    get_options(argc, argv, &input_file, &output_file, &output_type, &validate);
+    get_options(argc, argv, &input_file, &input_type, &output_file, &output_type, &validate);
 
     unsigned char *idata, *odata;
     int ilen, olen;
+    if (strcmp(input_type, "ANSI") == 0
+        || strcmp(input_type, "ISO") == 0
+        || strcmp(input_type, "ISONC") == 0
+        || strcmp(input_type, "ISOCC") == 0) {
 
-    if (read_raw_from_filesize(input_file, &idata, &ilen) != 0)
-        OPEN_ERR_EXIT(input_file);
+        FILE *i_fp = NULL;
+        if ((i_fp = fopen(input_file, "rb")) == NULL)
+            OPEN_ERR_EXIT(input_file);
 
-    /*
-     * perform convert
-     * */
-    convert(idata, ilen, output_type, &odata, &olen);
+        fseek(i_fp, 0, SEEK_END);
+        ilen = ftell(i_fp);
+        fseek(i_fp, 0, SEEK_SET);
+        idata = (unsigned char *) malloc((ilen + 1) * sizeof(unsigned char));
+        fread(idata, sizeof(unsigned char), ilen, i_fp);
+        fclose(i_fp);
+
+        fmr2fmr(idata, ilen, &odata, &olen, input_file, output_type);
+    } else {
+
+        if (read_raw_from_filesize(input_file, &idata, &ilen) != 0)
+            OPEN_ERR_EXIT(input_file);
+        img2fmr(idata, ilen, output_type, &odata, &olen);
+    }
 
     FILE *fmr_fp = NULL;
     if ((fmr_fp = fopen(output_file, "wb")) == NULL)
         OPEN_ERR_EXIT(output_file);
 
-    int n;
-    if ((n = fwrite(odata, 1, olen, fmr_fp)) != olen)
+    if ((fwrite(odata, 1, olen, fmr_fp)) != olen)
         ERR_EXIT("Could not write data to file");
 
     printf("Converting to [%s] successfully done\n", output_type);
