@@ -8,12 +8,12 @@ plugins {
 
 jib {
     from.image = "biometrictechnologies/ubuntu-clib-java11"
-    to.image = "biometric-converter"
+    to.image = "biometrictechnologies/biometric-converter"
 }
 
 group = "net.iriscan.bc"
-version = "0.0.1-SNAPSHOT"
-java.sourceCompatibility = JavaVersion.VERSION_17
+version = "0.0.2-SNAPSHOT"
+java.sourceCompatibility = JavaVersion.VERSION_11
 
 repositories {
     mavenCentral()
@@ -26,6 +26,6 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
-    implementation("net.java.dev.jna:jna:5.11.0")
+    implementation("net.java.dev.jna:jna:5.12.1")
     implementation("commons-codec:commons-codec:1.15")
 }

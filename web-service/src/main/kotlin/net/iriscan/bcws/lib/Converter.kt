@@ -1,8 +1,6 @@
 package net.iriscan.bcws.lib
 
 import com.sun.jna.Library
-import com.sun.jna.Native
-import com.sun.jna.NativeLibrary
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.PointerByReference
 
@@ -10,21 +8,31 @@ import com.sun.jna.ptr.PointerByReference
  * @author Slava Gornostal
  */
 interface Converter : Library {
-    companion object {
-        init {
-            NativeLibrary.addSearchPath("converter", "/usr/local/lib")
-        }
-
-        val instance: Converter = Native.load("converter", Converter::class.java)
-    }
-
-    fun convert(
+    fun img2fmr(
         input: ByteArray,
         inputLength: Int,
         outputType: String,
         output: PointerByReference,
         outputLength: IntByReference
     ): Int
-}
 
-enum class ConvertOutputType { ISO, ANSI }
+    fun fmr2fmr(
+        input: ByteArray,
+        inputLength: Int,
+        output: PointerByReference,
+        outputLength: IntByReference,
+        inputType: String,
+        outputType: String,
+    ): Int
+
+    fun fmr2fmr_iso_card(
+        input: ByteArray,
+        inputLength: Int,
+        output: PointerByReference,
+        outputLength: IntByReference,
+        inputType: String,
+        outputType: String,
+        imageResX: Int,
+        imageResY: Int,
+    ): Int
+}
