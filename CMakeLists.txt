@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.10.2)
 
 project(biometric_converter)
 
+set(CMAKE_C_FLAGS "-fPIC")
+
+# path libs
+include_directories(/usr/local/lib/include)
+link_directories(/usr/local/lib)
+
+# NBIS use openjp2
+add_definitions(-D__NBIS_OPENJP2__=ON)
+# fix stdin for openjp2
+add_definitions(-DOPJ_STDINT_H=OFF)
+
 add_library(converter SHARED lib/converter.h lib/converter.c)
 install(TARGETS converter DESTINATION lib)
 include(GenerateExportHeader)

@@ -14,6 +14,8 @@
 #include <time.h>
 #include <sys/param.h>
 #include <imgutil.h>
+#include <png_dec.h>
+#include <jpeg2k.h>
 
 int debug = 0;
 
@@ -673,7 +675,6 @@ int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
     IMG_DAT *img_dat;
 
     if ((ret = image_type(&img_type, idata, ilen))) {
-        free(idata);
         return (ret);
     }
 
@@ -691,33 +692,24 @@ int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
         case WSQ_IMG:
             if ((ret = wsq_decode_mem(&ndata, &w, &h, &d, &ppi, &lossyflag,
                                       idata, ilen))) {
-                free(idata);
                 return (ret);
             }
             nlen = w * h;
-            /* Pix depth always 8 for WSQ ... */
-            n_cmpnts = 1;
             break;
         case JPEGL_IMG:
             if ((ret = jpegl_decode_mem(&img_dat, &lossyflag, idata, ilen))) {
-                free(idata);
                 return (ret);
             }
             if ((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
                                          img_dat))) {
-                free(idata);
                 free_IMG_DAT(img_dat, FREE_IMAGE);
                 return (ret);
             }
-            /* JPEGL always returns non-interleaved data. */
-            intrlvflag = 0;
-            n_cmpnts = img_dat->n_cmpnts;
             free_IMG_DAT(img_dat, FREE_IMAGE);
             break;
         case JPEGB_IMG:
             if ((ret = jpegb_decode_mem(&ndata, &w, &h, &d, &ppi, &lossyflag,
                                         idata, ilen))) {
-                free(idata);
                 return (ret);
             }
             if (d == 8) {
@@ -738,7 +730,6 @@ int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
         case IHEAD_IMG:
             if ((ret = ihead_decode_mem(&ndata, &w, &h, &d, &ppi, &lossyflag,
                                         idata, ilen))) {
-                free(idata);
                 return (ret);
             }
 
@@ -753,91 +744,38 @@ int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
                 fprintf(stderr, "ERROR : read_and_decode_image : ");
                 fprintf(stderr, "IHead decoder returned d=%d ", d);
                 fprintf(stderr, "not equal to {1,8,24}\n");
-                free(idata);
                 return (-2);
             }
             break;
-#ifdef __NBIS_JASPER__
-            case JP2_IMG:
-           if((ret = jpeg2k_decode_mem(&img_dat, &lossyflag, idata, ilen))){
-              free(idata);
-              return(ret);
-           }
-           if((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
-                                      img_dat))){
-              free(idata);
-              free_IMG_DAT(img_dat, FREE_IMAGE);
-              return(ret);
-           }
-           /* JPEG2K always returns non-interleaved data. */
-           intrlvflag = 0;
-           n_cmpnts = img_dat->n_cmpnts;
-           if(d == 24){
-              for(i = 0; i < n_cmpnts; i++){
-                 hor_sampfctr[i] = img_dat->hor_sampfctr[i];
-                 vrt_sampfctr[i] = img_dat->vrt_sampfctr[i];
-              }
-           }
-           free_IMG_DAT(img_dat, FREE_IMAGE);
-           break;
-#endif
-#ifdef __NBIS_OPENJP2__
-            case JP2_IMG:
-           if((ret = openjpeg2k_decode_mem(&img_dat, &lossyflag, idata, ilen))){
-              free(idata);
-              return(ret);
-           }
+        case JP2_IMG:
+            if ((ret = openjpeg2k_decode_mem(&img_dat, &lossyflag, idata, ilen))) {
+                return (ret);
+            }
+            if ((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
+                                         img_dat))) {
+                free_IMG_DAT(img_dat, FREE_IMAGE);
+                return (ret);
+            }
+            free_IMG_DAT(img_dat, FREE_IMAGE);
+            break;
 
-           if((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
-                                      img_dat))){
-              free(idata);
-              free_IMG_DAT(img_dat, FREE_IMAGE);
-              return(ret);
-           }
+        case PNG_IMG:
+            if ((ret = png_decode_mem(&img_dat, &lossyflag, idata, ilen))) {
+                return (ret);
+            }
+            if ((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
+                                         img_dat))) {
+                free_IMG_DAT(img_dat, FREE_IMAGE);
+                return (ret);
+            }
+            free_IMG_DAT(img_dat, FREE_IMAGE);
+            break;
 
-           /* OPENJPEG always returns non-interleaved data. */
-           intrlvflag = 0;
-           n_cmpnts = img_dat->n_cmpnts;
-           if(d == 24){
-              for(i = 0; i < n_cmpnts; i++){
-                 hor_sampfctr[i] = img_dat->hor_sampfctr[i];
-                 vrt_sampfctr[i] = img_dat->vrt_sampfctr[i];
-              }
-           }
-           free_IMG_DAT(img_dat, FREE_IMAGE);
-           break;
-#endif
-#ifdef __NBIS_PNG__
-            case PNG_IMG:
-           if((ret = png_decode_mem(&img_dat, &lossyflag, idata, ilen))){
-              free(idata);
-              return(ret);
-           }
-           if((ret = get_IMG_DAT_image(&ndata, &nlen, &w, &h, &d, &ppi,
-                                      img_dat))){
-              free(idata);
-              free_IMG_DAT(img_dat, FREE_IMAGE);
-              return(ret);
-           }
-           /* PNG always returns non-interleaved data. */
-           intrlvflag = 0;
-           n_cmpnts = img_dat->n_cmpnts;
-           if(d == 24){
-              for(i = 0; i < n_cmpnts; i++){
-                 hor_sampfctr[i] = img_dat->hor_sampfctr[i];
-                 vrt_sampfctr[i] = img_dat->vrt_sampfctr[i];
-              }
-           }
-           free_IMG_DAT(img_dat, FREE_IMAGE);
-           break;
-#endif
         default:
             fprintf(stderr, "ERROR : read_and_decode_image : ");
             fprintf(stderr, "illegal image type = %d\n", img_type);
             return (-3);
     }
-
-    free(idata);
 
     *oimg_type = img_type;
     *odata = ndata;
@@ -880,7 +818,6 @@ void read_minutiae_to_ansi_fmr(unsigned char *idata, int iw, int ih, int id, int
                      &low_contrast_map, &low_flow_map, &high_curve_map,
                      &map_w, &map_h, &bdata, &bw, &bh, &bd,
                      idata, iw, ih, id, ippmm, &lfsparms_V2) != 0) {
-        free(idata);
         ERR_EXIT("cannot read minutiae");
     }
 
