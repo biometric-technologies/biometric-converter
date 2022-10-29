@@ -11,6 +11,7 @@ set(DEP_LINK_DIR /usr/local/lib)
 # path to install
 set(INSTALL_INCLUDE_DIR /usr/local/include)
 set(INSTALL_LINK_DIR /usr/local/lib)
+set(INSTALL_BIN_DIR /usr/local/bin)
 
 include_directories(${DEP_INCLUDE_DIR})
 link_directories(${DEP_LINK_DIR})
@@ -64,3 +65,4 @@ target_link_libraries(convert PRIVATE
         z
         m)
 target_include_directories(convert PRIVATE include)
+INSTALL(TARGETS convert RUNTIME DESTINATION ${INSTALL_BIN_DIR})
