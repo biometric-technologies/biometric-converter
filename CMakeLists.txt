@@ -4,23 +4,25 @@ project(biometric_converter)
 
 set(CMAKE_C_FLAGS "-fPIC")
 
-# path libs
-include_directories(/usr/local/lib/include)
-link_directories(/usr/local/lib)
+# path dependency libs
+set(DEP_INCLUDE_DIR /usr/local/include)
+set(DEP_LINK_DIR /usr/local/lib)
+
+# path to install
+set(INSTALL_INCLUDE_DIR /usr/local/include)
+set(INSTALL_LINK_DIR /usr/local/lib)
+
+include_directories(${DEP_INCLUDE_DIR})
+link_directories(${DEP_LINK_DIR})
 
 # NBIS use openjp2
 add_definitions(-D__NBIS_OPENJP2__=ON)
 # fix stdin for openjp2
 add_definitions(-DOPJ_STDINT_H=OFF)
 
-add_library(converter SHARED lib/converter.h lib/converter.c)
-install(TARGETS converter DESTINATION lib)
-include(GenerateExportHeader)
-GENERATE_EXPORT_HEADER(converter
-        BASE_NAME converter
-        EXPORT_MACRO_NAME EXPORT
-        EXPORT_FILE_NAME ${CMAKE_SOURCE_DIR}/exports/converter_EXPORTS.h
-        STATIC_DEFINE SHARED_EXPORTS_BUILT_AS_STATIC)
+add_library(converter SHARED lib/converter.c)
+INSTALL(TARGETS converter LIBRARY DESTINATION ${INSTALL_LINK_DIR})
+INSTALL(FILES include/converter.h DESTINATION ${INSTALL_INCLUDE_DIR})
 target_link_libraries(converter PRIVATE
         biomdi
         fmr
@@ -39,7 +41,7 @@ target_link_libraries(converter PRIVATE
         png
         z
         m)
-target_include_directories(converter PUBLIC ${CMAKE_SOURCE_DIR}/exports)
+target_include_directories(converter PRIVATE include)
 
 add_executable(convert bin/convert.c)
 target_link_libraries(convert PRIVATE
@@ -61,4 +63,4 @@ target_link_libraries(convert PRIVATE
         png
         z
         m)
-target_include_directories(convert PUBLIC ${CMAKE_SOURCE_DIR}/lib)
+target_include_directories(convert PRIVATE include)
