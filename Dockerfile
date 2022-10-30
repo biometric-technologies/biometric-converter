@@ -38,4 +38,5 @@ COPY --from=0 /opt/install/build-converter/convert /usr/bin/
 
 RUN mkdir /opt/work
 VOLUME /opt/work
+ENV LD_LIBRARY_PATH=/usr/local/lib
 WORKDIR /opt/work
