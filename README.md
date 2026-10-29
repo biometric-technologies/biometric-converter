@@ -4,9 +4,9 @@ About
 -----
 Biometric converter is software that converts fingerprint images (WSQ, JPEG, JPEG2000,
 PNG) to finger minutiae formats ([ANSI/INCITS 378](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=150619)
-and [ISO/IEC 29794-4](http://www.iso.org/iso/catalogue_detail.htm?csnumber=62791)) and finger minutiae format between
+and ISO/IEC 19794-2) and finger minutiae format between
 each other.
-This repository serves as a formally recognized reference implementation of the international standard.
+It is built on NIST Biometric Image Software (NBIS) and the NIST BiomDI libraries.
 
 Build / Installation
 ------------
