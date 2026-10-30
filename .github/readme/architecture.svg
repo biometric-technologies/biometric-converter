@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="Three interfaces over one C library over NIST software">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c77c3"/></marker></defs>
+<rect x="0.5" y="0.5" width="959" height="299" rx="16" fill="#ffffff" stroke="#d0d7de"/>
+<!-- top: interfaces -->
+<g transform="translate(120,30)">
+<rect width="200" height="60" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="100" y="27" text-anchor="middle" font-size="15" fill="#0a328f">convert (command line)</text>
+<text x="100" y="47" text-anchor="middle" font-size="13" fill="#57606a">bin/</text>
+</g>
+<g transform="translate(380,30)">
+<rect width="200" height="60" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="100" y="27" text-anchor="middle" font-size="15" fill="#0a328f">Your program in C</text>
+<text x="100" y="47" text-anchor="middle" font-size="13" fill="#57606a">#include &lt;converter.h&gt;</text>
+</g>
+<g transform="translate(640,30)">
+<rect width="200" height="60" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="100" y="27" text-anchor="middle" font-size="15" fill="#0a328f">REST web service</text>
+<text x="100" y="47" text-anchor="middle" font-size="13" fill="#57606a">web-service/, Spring Boot + JNA</text>
+</g>
+<path d="M220,95 L220,125" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<path d="M480,95 L480,125" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<path d="M740,95 L740,125" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<!-- middle: library -->
+<g transform="translate(120,130)">
+<rect width="720" height="60" rx="10" fill="#5cc8ff" fill-opacity="0.35" stroke="#1c77c3"/>
+<text x="360" y="27" text-anchor="middle" font-size="16" fill="#0a328f">libconverter.so: img2fmr (image → template), fmr2fmr (template → template)</text>
+<text x="360" y="48" text-anchor="middle" font-size="13" fill="#57606a">lib/converter.c, include/converter.h</text>
+</g>
+<path d="M300,195 L300,225" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<path d="M660,195 L660,225" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<!-- bottom: NIST -->
+<g transform="translate(120,230)">
+<rect width="340" height="55" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="170" y="24" text-anchor="middle" font-size="15" fill="#0a328f">NIST NBIS</text>
+<text x="170" y="44" text-anchor="middle" font-size="13" fill="#57606a">image decoders (WSQ, JPEG 2000, PNG), MINDTCT</text>
+</g>
+<g transform="translate(500,230)">
+<rect width="340" height="55" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="170" y="24" text-anchor="middle" font-size="15" fill="#0a328f">NIST BiomDI</text>
+<text x="170" y="44" text-anchor="middle" font-size="13" fill="#57606a">reads, writes and converts ISO and ANSI records</text>
+</g>
+</svg>

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="260" viewBox="0 0 960 260" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="Fingerprint image to minutiae to standard template">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c77c3"/></marker></defs>
+<rect x="0.5" y="0.5" width="959" height="259" rx="16" fill="#ffffff" stroke="#d0d7de"/>
+<!-- image -->
+<g transform="translate(40,45)">
+<rect width="170" height="120" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<g fill="none" stroke="#0a328f" stroke-width="2">
+<path d="M85,25 c-30,0 -45,25 -45,45 s15,45 45,45 s45,-25 45,-45 s-15,-45 -45,-45"/>
+<path d="M85,38 c-22,0 -32,18 -32,32 s10,32 32,32 s32,-18 32,-32 s-10,-32 -32,-32"/>
+<path d="M85,51 c-13,0 -19,10 -19,19 s6,19 19,19 s19,-10 19,-19 s-6,-19 -19,-19"/>
+</g>
+<text x="85" y="140" text-anchor="middle" font-size="15" fill="#0a328f">Fingerprint image</text>
+<text x="85" y="158" text-anchor="middle" font-size="13" fill="#57606a">WSQ, JPEG 2000, PNG...</text>
+</g>
+<path d="M215,105 L265,105" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<!-- minutiae -->
+<g transform="translate(270,45)">
+<rect width="200" height="120" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="100" y="30" text-anchor="middle" font-size="16" fill="#0a328f">Find the minutiae</text>
+<g fill="none" stroke="#9aa5b1" stroke-width="1.5">
+<path d="M30,48 q40,-15 80,0 t80,0"/><path d="M30,63 q40,15 80,0 t80,0"/><path d="M30,78 q40,-10 80,0 t60,0"/>
+</g>
+<circle cx="70" cy="46" r="5" fill="#d1242f"/><circle cx="150" cy="63" r="5" fill="#d1242f"/><circle cx="110" cy="78" r="5" fill="#d1242f"/><circle cx="170" cy="78" r="5" fill="#d1242f"/>
+<text x="100" y="106" text-anchor="middle" font-size="13" fill="#57606a">ridge endings and forks: x, y, angle</text>
+<text x="100" y="142" text-anchor="middle" font-size="13" fill="#57606a">NIST MINDTCT</text>
+</g>
+<path d="M475,105 L525,105" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<!-- template -->
+<g transform="translate(530,45)">
+<rect width="200" height="120" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="100" y="30" text-anchor="middle" font-size="16" fill="#0a328f">Standard template</text>
+<text x="100" y="58" text-anchor="middle" font-size="13" font-family="Consolas, Menlo, monospace" fill="#0a328f">FMR 020 ... 1F 3A 5C 02</text>
+<text x="100" y="82" text-anchor="middle" font-size="13" fill="#57606a">ISO/IEC 19794-2</text>
+<text x="100" y="100" text-anchor="middle" font-size="13" fill="#57606a">or ANSI INCITS 378</text>
+<text x="100" y="142" text-anchor="middle" font-size="13" fill="#57606a">a few hundred bytes</text>
+</g>
+<path d="M735,105 L785,105" stroke="#1c77c3" stroke-width="2" marker-end="url(#a)"/>
+<!-- any system -->
+<g transform="translate(790,45)">
+<rect width="130" height="120" rx="10" fill="#eaf4ff" stroke="#1c77c3"/>
+<text x="65" y="48" text-anchor="middle" font-size="15" fill="#0a328f">Any vendor's</text>
+<text x="65" y="68" text-anchor="middle" font-size="15" fill="#0a328f">matcher</text>
+<text x="65" y="96" text-anchor="middle" font-size="13" fill="#57606a">or a smart card</text>
+</g>
+<text x="480" y="225" text-anchor="middle" font-size="14" fill="#57606a">ISO ⇄ ANSI conversion works on templates directly, no image needed.</text>
+</svg>
