@@ -13,9 +13,13 @@ RUN git clone https://github.com/biometric-technologies/nist-biometric-image-sof
     && make it  \
     && make install LIBNBIS=no
 
+# BiomDI at a fixed commit, with the leak fix in third_party/
+COPY third_party/biomdi-free-unread-records.patch /opt/install/
 RUN git clone https://github.com/usnistgov/biomdi.git &&  \
     chmod +x -R biomdi &&  \
     cd /opt/install/biomdi  \
+    && git checkout acf76a030b0193faafb55fb469b27741b6aa8874  \
+    && git apply /opt/install/biomdi-free-unread-records.patch  \
     && make  \
     && make install
 

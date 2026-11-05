@@ -1,10 +1,15 @@
 package net.iriscan.bcws.lib
 
 import com.sun.jna.Library
+import com.sun.jna.Pointer
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.PointerByReference
 
 /**
+ * Binding of libconverter (include/converter.h). The conversion functions
+ * return 0 on success and -1 on error; converter_last_error() then gives the
+ * reason. Output buffers are released with converter_free().
+ *
  * @author Slava Gornostal
  */
 interface Converter : Library {
@@ -35,4 +40,8 @@ interface Converter : Library {
         imageResX: Int,
         imageResY: Int,
     ): Int
+
+    fun converter_last_error(): String
+
+    fun converter_free(data: Pointer?)
 }

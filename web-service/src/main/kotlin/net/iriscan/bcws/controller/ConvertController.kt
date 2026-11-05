@@ -11,10 +11,12 @@ import net.iriscan.bcws.extension.decodeBase64
 import net.iriscan.bcws.extension.encodeBase64
 import net.iriscan.bcws.lib.ConverterFactory
 import net.iriscan.bcws.lib.FileFormat
+import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.CrossOrigin
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 
 /**
  * @author Slava Gornostal
@@ -54,24 +56,35 @@ class ConvertController {
         val input = inputBase64.decodeBase64()
         val out = PointerByReference()
         val outLength = IntByReference()
-        when {
+        // The library keeps the error message per thread, so read it on the
+        // thread that made the call
+        val rc = when {
             inputType.isImage() && outputType.isMinutae() ->
-                converter.img2fmr(input, input.size, inputType.name, out, outLength)
+                converter.img2fmr(input, input.size, outputType.libraryName(), out, outLength)
 
-            inputType.isMinutae() && outputType.isMinutae() &&
-                    (outputType == FileFormat.ISOC || outputType == FileFormat.ISOCC) ->
+            // The resolution matters for ISO card input, which does not carry it;
+            // 0 means 500 ppi
+            inputType.isMinutae() && outputType.isMinutae() ->
                 converter.fmr2fmr_iso_card(
                     input, input.size, out, outLength,
-                    inputType.name, outputType.name, imageResX, imageResY
+                    inputType.libraryName(), outputType.libraryName(), imageResX, imageResY
                 )
 
-            inputType.isMinutae() && outputType.isMinutae() ->
-                converter.fmr2fmr(input, input.size, out, outLength, inputType.name, outputType.name)
-
-            else -> throw IllegalStateException("Conversion is not supported.")
+            else -> throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Conversion from $inputType to $outputType is not supported."
+            )
+        }
+        if (rc != 0) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, converter.converter_last_error())
         }
 
-        return out.value.getByteArray(0, outLength.value).encodeBase64()
+        val data = out.value
+        try {
+            return data.getByteArray(0, outLength.value).encodeBase64()
+        } finally {
+            converter.converter_free(data)
+        }
     }
 
 }

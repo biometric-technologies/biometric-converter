@@ -15,14 +15,17 @@ the tools of the system that will consume it.
 Developed by Iriscan (Biometric Technologies OÜ) — <https://www.iriscan.com>. The short introduction is in the [README](../README.md).
 
 Online demo: [Biometric Data Interchange](https://www.iriscan.com/biometric-data-interchange)
-converts fingerprint images and minutiae templates in the browser, using a
-WebAssembly build of the same NBIS and BiomDI based engine. That WebAssembly
-build is not part of this repository.
+converts fingerprint images and minutiae templates in the browser. It runs
+`lib/converter.c` compiled to WebAssembly (see [WebAssembly](#webassembly)),
+so it writes the same records as the library.
 
-> **Status.** The code in this repository has defects that make its output
-> unusable as it stands: minutiae are detected on the wrong data, all minutia
-> coordinates are written as zero, and minutiae-to-minutiae conversion crashes.
-> See [Known issues](#known-issues) before relying on it.
+> **Status.** The defects that made the output of earlier versions unusable
+> are fixed: minutiae are detected on the decoded image and written at their
+> real positions, image to `ISO` works, and minutiae-to-minutiae conversion
+> works in every direction instead of crashing. On `example/sample_image.wsq`
+> the ANSI record holds the same 112 minutiae, at the same positions and
+> angles, as NBIS `mindtct -m1`. `tests/run.sh` checks this. What is still
+> open is listed under [Known issues](#known-issues).
 
 ## Contents
 
@@ -45,8 +48,8 @@ build is not part of this repository.
 - Minutiae detection with NBIS MINDTCT.
 - Output as an ANSI INCITS 378 record, or as an ISO/IEC 19794-2 record in the
   full record format, the normal card format or the compact card format.
-- Conversion of minutiae records between the ANSI and ISO formats, using the
-  BiomDI conversion routines.
+- Conversion of minutiae records between any two of the ANSI and ISO formats,
+  using the BiomDI conversion routines.
 - Three interfaces: a shared library (`libconverter.so`), a command-line tool
   (`convert`) and a Spring Boot web service that calls the library through JNA.
 - Dockerfiles for the command-line tool and for a base image of the web
@@ -70,17 +73,27 @@ its own names; see [Web service](#web-service).
 
 ### Conversion directions
 
-| From | To | Library function | Result at the time of writing |
+| From | To | Library function | Result with `example/sample_image.wsq` |
 |---|---|---|---|
-| image | `ANSI` | `img2fmr` | record produced; minutiae wrong (issues 1, 2) |
-| image | `ISO` | `img2fmr` | fails with `could not push FMR` (issue 3) |
-| image | `ISONC`, `ISOCC` | `img2fmr` | record produced; minutiae wrong (issues 1, 2) |
-| `ANSI` | `ISO`, `ISONC`, `ISOCC` | `fmr2fmr` | crashes (issue 4) |
-| `ISO`, `ISONC`, `ISOCC` | `ANSI` | `fmr2fmr`, `fmr2fmr_iso_card` | crashes (issue 4) |
-| any minutiae format | the same format | `fmr2fmr` | crashes (issue 4) |
+| image | `ANSI` | `img2fmr` | 112 minutiae, identical in position and angle to `mindtct -m1` |
+| image | `ISO`, `ISONC` | `img2fmr` | 112 minutiae, positions within 0.1 pixel of the ANSI record |
+| image | `ISOCC` | `img2fmr` | 95 minutiae: the 17 beyond the 25.5 mm reach of the format are left out (see [Limitations](#limitations)); positions within 1 pixel |
+| `ANSI` | `ISO`, `ISONC`, `ISOCC` | `fmr2fmr` | works |
+| `ISO`, `ISONC`, `ISOCC` | `ANSI` | `fmr2fmr`, `fmr2fmr_iso_card` | works |
+| `ISO`, `ISONC`, `ISOCC` | another ISO variant | `fmr2fmr`, `fmr2fmr_iso_card` | works |
+| any minutiae format | the same format | `fmr2fmr` | works |
 
-Conversions between the ISO variants (for example `ISO` to `ISOCC`) are not
-implemented: the code routes them through the ISO-to-ANSI path.
+All 16 minutiae-to-minutiae directions were run on the records made from the
+sample image, each followed by the conversion back. Minutiae counts are kept
+(apart from the compact card range). Compared with the minutiae of the image,
+no position moved by more than 1.06 pixels and no angle by more than
+2 degrees, one ANSI angle step; the formats store angles in steps of
+2 degrees (ANSI), 1.4 degrees (`ISO`, `ISONC`) and 5.6 degrees (`ISOCC`).
+
+Conversions between the ISO variants are done directly: positions through
+millimetres, angles between the 256-step and 64-step units. BiomDI has no
+routine for them, and going through ANSI would round every angle to
+2 degrees.
 
 ## Architecture
 
@@ -111,12 +124,15 @@ flowchart TD
 Image to minutiae (`img2fmr`):
 
 1. The NBIS decoders identify the image format and decode the pixels; the
-   resolution is taken from the image, or 500 ppi is assumed when the image has
-   none.
+   resolution is taken from the image (for PNG from its `pHYs` chunk, which
+   the NBIS decoder ignores), or 500 ppi is assumed when the image has none.
 2. MINDTCT (`get_minutiae` with the NBIS V2 parameters) detects minutiae,
    their direction, type and reliability.
 3. The results are stored in an ANSI/NIST-ITL Type-9 record and converted to an
-   ANSI INCITS 378 record, including ridge counts as extended data. This step is
+   ANSI INCITS 378 record, including ridge counts as extended data. Positions
+   are converted back to the pixels MINDTCT found (origin at the top left),
+   the resolution is written in pixels per centimetre (197 for 500 ppi), and
+   the minutia quality is the MINDTCT reliability times 100. This step is
    adapted from the BiomDI `an2k2fmr` tool.
 4. For ISO output the record is converted with the BiomDI `ansi2iso_fvmr` or
    `ansi2isocc_fvmr` routines.
@@ -125,8 +141,9 @@ Image to minutiae (`img2fmr`):
 
 Minutiae to minutiae (`fmr2fmr`) parses the input record with BiomDI and
 applies the BiomDI conversion routines (adapted from the BiomDI `fmr2fmr`
-tool). ISO card formats do not carry the image resolution, so
-`fmr2fmr_iso_card` takes it as arguments.
+tool), or the direct conversion between ISO variants described above. ISO
+card formats do not carry the image resolution, so `fmr2fmr_iso_card` takes
+it as arguments; `fmr2fmr` assumes 500 ppi for them.
 
 ## Repository layout
 
@@ -136,6 +153,8 @@ tool). ISO card formats do not carry the image resolution, so
 | `lib/converter.c` | Library: image decoding, minutiae extraction, record conversion |
 | `bin/convert.c` | Command-line tool |
 | `example/` | Minimal C program that converts `sample_image.wsq` to ANSI |
+| `tests/` | Test program and script, run by `ctest` |
+| `third_party/` | Patch for BiomDI (memory leak), applied before building it |
 | `web-service/` | REST web service (Kotlin, Spring Boot 2.7, WebFlux, JNA) |
 | `CMakeLists.txt` | Builds `libconverter.so` and `convert` |
 | `Dockerfile` | Image with the command-line tool |
@@ -179,9 +198,15 @@ failed. GCC 9 and earlier need no change.
 ```sh
 git clone https://github.com/usnistgov/biomdi.git
 cd biomdi
+git checkout acf76a030b0193faafb55fb469b27741b6aa8874
+git apply ../biometric-converter/third_party/biomdi-free-unread-records.patch
 make
 sudo make install
 ```
+
+The patch frees records that BiomDI allocates and loses when a read stops
+in the middle of a record (every ISO card record is read that way). Without
+it the converter works, but leaks 48 bytes per card record read.
 
 BiomDI installs to `/usr/local` and finds the NBIS headers there. For another
 location, change `PREFIX` in `common/common.mk`.
@@ -205,6 +230,7 @@ mkdir build
 cd build
 cmake ..
 make
+ctest --output-on-failure
 sudo make install
 sudo ldconfig
 ```
@@ -212,6 +238,15 @@ sudo ldconfig
 `libconverter.so` links the NBIS libraries statically and the BiomDI
 `libfmr.so` dynamically, so `libfmr.so` must be on the library path at run
 time.
+
+`ctest` runs `tests/run.sh`, which uses `example/sample_image.wsq`. It runs
+the test program `test_converter` (every conversion direction, error
+reporting, eight threads converting at once) and the command-line tool. When
+the NBIS tools `mindtct` and `dwsq` and `python3` are on the path, it also
+compares the minutiae with `mindtct -m1` and checks PNG input with and without
+a resolution. `VALGRIND=1 tests/run.sh build` adds a few conversions under
+valgrind, which must report no leaks (BiomDI built with the patch in
+`third_party/`).
 
 ### 4. Web service
 
@@ -221,7 +256,8 @@ cd web-service
 java -jar build/libs/web-service-0.0.2-SNAPSHOT.jar
 ```
 
-The wrapper uses Gradle 7.4.1; the project targets Java 11. At run time the
+The wrapper uses Gradle 7.4.1, which runs on JDK 11 to 17 (not on newer
+JDKs); the project targets Java 11. At run time the
 service loads `libconverter` through JNA from `/usr/local/lib` or the system
 library path and listens on port 8080.
 
@@ -256,8 +292,12 @@ Prebuilt images have been published on Docker Hub as
 
 ### WebAssembly
 
-This repository contains no WebAssembly build. The browser demo linked above
-uses a separate WebAssembly build that is not published here.
+The browser demo linked above compiles `lib/converter.c` with Emscripten and
+`-DCONVERTER_NO_IMAGE_DECODERS`, which leaves out the NBIS image decoders and
+`img2fmr`: the browser decodes the image and calls `raw2fmr` with the pixels.
+The build script and a test that compares its records byte for byte with the
+native `convert` are in the website repository,
+[`tools/bdi-wasm`](https://github.com/biometric-technologies/iriscan.com/tree/main/tools/bdi-wasm).
 
 ## Usage
 
@@ -282,8 +322,11 @@ convert -i finger.ansi -ti ANSI -o finger.iso -to ISO
 ```
 
 The tool prints the selected types and a success line to standard output, and
-NBIS diagnostic messages to standard error. An unknown output type produces an
-ANSI record. The built-in help lists `ISOC`; the code expects `ISONC`.
+NBIS diagnostic messages to standard error. On an error, such as an unknown
+type, an unreadable image or a malformed record, it prints the reason to
+standard error, writes no output file and exits with status 1. `ISONC` and
+`ISOCC` input is taken to be at 500 ppi; for another resolution use the
+library function `fmr2fmr_iso_card` or the web service.
 
 ### C library
 
@@ -293,23 +336,39 @@ ANSI record. The built-in help lists `ISOC`; the code expects `ISONC`.
 int img2fmr(unsigned char *idata, int ilen, char *otype,
             unsigned char **odata, int *olen);
 
+int raw2fmr(unsigned char *pixels, int width, int height, int ppi, char *otype,
+            unsigned char **odata, int *olen);
+
 int fmr2fmr(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
             char *in_type_str, char *out_type_str);
 
 int fmr2fmr_iso_card(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
                      char *in_type_str, char *out_type_str, int iso_c_xres, int iso_c_yres);
+
+const char *converter_last_error(void);
+
+void converter_free(void *data);
 ```
 
 | Function | Purpose |
 |---|---|
 | `img2fmr` | Image bytes (`idata`, `ilen`) to a minutiae record of type `otype` |
-| `fmr2fmr` | Minutiae record of type `in_type_str` to type `out_type_str` |
-| `fmr2fmr_iso_card` | As `fmr2fmr`, with the image resolution for ISO card inputs, which do not carry it. `iso_c_xres` and `iso_c_yres` are in pixels per centimetre, as in the record header (197 for 500 ppi) |
+| `raw2fmr` | An image that is already decoded: 8-bit grey-scale pixels, one byte each, rows from the top, at `ppi` pixels per inch (0 means 500). Gives the same record as `img2fmr` for the same pixels |
+| `fmr2fmr` | Minutiae record of type `in_type_str` to type `out_type_str`. ISO card input is taken to be at 500 ppi |
+| `fmr2fmr_iso_card` | As `fmr2fmr`, with the image resolution for ISO card inputs, which do not carry it. `iso_c_xres` and `iso_c_yres` are in pixels per centimetre, as in the record header (197 for 500 ppi); 0 means 197. They are ignored for other input types |
+| `converter_last_error` | Why the last call in the calling thread failed; an empty string after a successful call |
+| `converter_free` | Releases an output buffer |
 
 Type strings are the identifiers from [Format identifiers](#format-identifiers).
-The output buffer is allocated with `malloc` and belongs to the caller. The
-functions return 0; on an error they print a message to standard error and
-call `exit()`, which ends the calling process.
+The conversion functions return 0 on success. The output buffer is allocated
+with `malloc` and belongs to the caller; release it with `converter_free` (or
+`free`). On an error they return -1, set `*odata` to `NULL` and `*olen` to 0,
+and `converter_last_error()` gives the reason. They do not end the process.
+
+The functions can be called from several threads at once. NBIS keeps global
+state in its image decoders and in MINDTCT, so image decoding and minutiae
+detection run one call at a time; the record conversions run in parallel.
+The error message is kept per thread.
 
 Example (adapted from `example/example.c`):
 
@@ -329,12 +388,15 @@ int main(void) {
 
     unsigned char *odata;
     int olen;
-    img2fmr(idata, ilen, "ANSI", &odata, &olen);
+    if (img2fmr(idata, ilen, "ANSI", &odata, &olen) != 0) {
+        fprintf(stderr, "conversion failed: %s\n", converter_last_error());
+        return 1;
+    }
 
     FILE *out = fopen("sample.ansi", "wb");
     fwrite(odata, 1, olen, out);
     fclose(out);
-    free(odata);
+    converter_free(odata);
     free(idata);
     return 0;
 }
@@ -358,8 +420,8 @@ Format names in the web service:
 | Name | Meaning |
 |---|---|
 | `WSQ`, `JPEG`, `IHEAD`, `JPEG2000`, `PNG` | Image input. The name only selects image conversion; the format is detected from the content |
-| `ANSI`, `ISO`, `ISOCC` | Minutiae formats as in the library |
-| `ISOC` | ISO normal card format (the library calls it `ISONC`; see issue 6) |
+| `ANSI`, `ISO`, `ISONC`, `ISOCC` | Minutiae formats as in the library |
+| `ISOC` | Earlier name of `ISONC`, still accepted |
 
 #### POST /convert
 
@@ -368,8 +430,8 @@ Format names in the web service:
 | `input` | string | Input file, base64 |
 | `inputType` | string | Format name of the input |
 | `outputType` | string | Format name of the output (a minutiae format) |
-| `imageResX` | integer | Optional. X resolution for ISO card conversions, pixels per centimetre |
-| `imageResY` | integer | Optional. Y resolution for ISO card conversions, pixels per centimetre |
+| `imageResX` | integer | Optional. X resolution of `ISONC` or `ISOCC` input, pixels per centimetre; 197 (500 ppi) if not given |
+| `imageResY` | integer | Optional. Y resolution of `ISONC` or `ISOCC` input, pixels per centimetre; 197 (500 ppi) if not given |
 
 ```sh
 curl -s http://localhost:8080/convert \
@@ -378,11 +440,13 @@ curl -s http://localhost:8080/convert \
 ```
 
 ```json
-{"output": "Rk1SACAyMAAKOQABAAEAAAIh..."}
+{"output": "Rk1SACAyMAAJKAABAAEAAAIhAm4A..."}
 ```
 
 `output` is the converted record, base64. A combination that is not supported
-(for example a minutiae input with an image output) returns HTTP 500.
+(for example a minutiae input with an image output) and a failed conversion
+(for example an unreadable image or a malformed record) return HTTP 400; the
+`message` field of the error response gives the reason from the library.
 
 #### POST /convert-batch
 
@@ -408,44 +472,95 @@ Each item has the fields of `/convert` plus `id`. The response lists one
 ```
 
 Items are converted concurrently. The current implementation returns them in
-request order; match results by `id`.
+request order; match results by `id`. If one item fails, the whole request
+returns HTTP 400.
 
 ## Known issues
 
-Confirmed by building the code and converting `example/sample_image.wsq` and
-other test images, except where marked as found by code reading.
+### Fixed
 
-| # | Issue | Effect |
+The numbers are those of the issue list in earlier versions of this document.
+Issues 1 to 4, 9 and 10 were reproduced with the earlier code before fixing
+them; the others were found by reading the code.
+
+| # | Issue | Fix |
 |---|---|---|
-| 1 | `img2fmr` passes the encoded input bytes, not the decoded pixels, to minutiae detection (`read_minutiae_to_ansi_fmr(idata, ...)` instead of `imdata`) | Minutiae are detected in noise. The sample gives 125 minutiae instead of the 112 that NBIS `mindtct` finds; other inputs hit the limit of 255 |
-| 2 | Minutia coordinates are converted before the record resolution is set, so the resolution used is 0 | Every minutia is written at (0, 0), even with issue 1 fixed |
-| 3 | Image to `ISO` (full record format) | Fails with `could not push FMR` and exit status 1; `ISONC` and `ISOCC` are written |
-| 4 | `fmr2fmr` and `fmr2fmr_iso_card` pass uninitialized record pointers to the BiomDI parser | Every minutiae-to-minutiae conversion ends with a segmentation fault, from the CLI and from a direct library call |
-| 5 | The CLI passes the input file path instead of the input type to `fmr2fmr` (code reading) | Would select no valid conversion once issue 4 is fixed |
-| 6 | The web service passes `inputType` instead of `outputType` to `img2fmr`, and sends `ISOC`, which the library does not recognize (found by code reading) | Image conversions in the web service always return ANSI; `ISOC` conversions do not work |
-| 7 | The library calls `exit()` on errors and keeps static state (a per-finger view counter) (code reading) | An error terminates the host process, including the web service JVM; concurrent calls, as in `/convert-batch`, are not safe |
-| 8 | Allocated records and buffers are not released (code reading) | Memory grows in long-running processes such as the web service |
-| 9 | For PNG input the image resolution is written as 65535 | Resolution field is wrong; detection itself assumes 500 ppi |
-| 10 | `example/CMakeLists.txt` calls `find_library` without a library name and uses `/usr/local/lib/include` | CMake 3.28 stops with an error; build the example with the `gcc` command above |
+| 1 | `img2fmr` passed the encoded input bytes, not the decoded pixels, to minutiae detection | The decoded pixels are passed. The sample gives the 112 minutiae that `mindtct` finds, instead of 125 detected in noise |
+| 2 | Minutia coordinates were converted before the record resolution was set, so every minutia was written at (0, 0) | Positions are converted from the AN2K units back to the pixels MINDTCT found, with the resolution the image was processed at |
+| 3 | Image to `ISO` failed with `could not push FMR` | The record length is computed from the record content before writing, for every format |
+| 4 | `fmr2fmr` and `fmr2fmr_iso_card` passed uninitialized record pointers to the BiomDI parser and crashed | The records are allocated, and every direction between the four formats works (see [Conversion directions](#conversion-directions)) |
+| 5 | The CLI passed the input file path instead of the input type to `fmr2fmr` | It passes the input type |
+| 6 | The web service passed `inputType` instead of `outputType` to `img2fmr` and sent `ISOC`, which the library does not recognize | It passes the output type and maps its names to the library names; `ISONC` is accepted, `ISOC` still works as the earlier name |
+| 7 | The library called `exit()` on errors and kept a static per-finger view counter | The functions return -1 and `converter_last_error()` gives the reason; the counter is local to each call; NBIS code runs under a lock; `gmtime_r` and `strtok_r` replace their non-reentrant versions |
+| 8 | Allocated records and buffers were not released | Records, the decoded image and the MINDTCT maps are freed; output buffers are released with `converter_free`, which the CLI and the web service call |
+| 9 | For PNG input the image resolution was written as 65535 | The resolution is read from the PNG `pHYs` chunk, or 500 ppi is used |
+| 10 | `example/CMakeLists.txt` called `find_library` without a library name and used a wrong include path | Fixed; `cmake` and `make` in `example/build` work |
+
+Also fixed while working on these:
+
+- The record resolution field held pixels per inch (500); ANSI INCITS 378 and
+  ISO/IEC 19794-2 define it in pixels per centimetre (197).
+- The minutia quality was the AN2K quality code (2 best, 63 worst); it is now
+  the MINDTCT reliability times 100, as the formats expect.
+- The returned length of `ISONC` and `ISOCC` records was the size of a buffer
+  computed for another layout, so 4 bytes of uninitialized memory followed
+  the minutiae.
+- A same-format copy of an `ISONC` or `ISOCC` record wrote the minutiae in the
+  6-byte `ISO` layout.
+- Image to `ISONC` used 500 as the resolution in pixels per centimetre.
+- A JPEG or IHead image of an unsupported depth freed the caller's input
+  buffer or leaked the decoded image; an unrecognized input was passed to
+  minutiae detection as raw pixels; images that are not 8-bit grey scale are
+  now rejected, as `mindtct` does.
+- The CLI copied the `-ti` and `-to` values into 2-byte buffers.
+- BiomDI did not free the minutia record of the read that ends every `ISONC`
+  and `ISOCC` record (48 bytes per card record), nor a ridge count, core or
+  delta record whose read failed (32 bytes for a record that ends inside its
+  ridge count data). `third_party/biomdi-free-unread-records.patch` fixes
+  this; the Dockerfiles apply it, and valgrind now reports no leaks.
+
+### Open
+
+- **BiomDI angle rounding.** Converting `ANSI` to `ISOCC` maps angles just
+  below 360 degrees to the largest compact card value (354.4 degrees) instead
+  of 0, and `ISOCC` to `ANSI` rounds angles up by half a degree.
+- **Messages on standard error.** NBIS prints several lines about the
+  AN2K record it builds for every image conversion.
+- **Serialized image processing.** Image decoding and minutiae detection run
+  one at a time across threads because NBIS keeps global state.
+- **Web service tests.** The web service has no automated tests.
 
 ## Limitations
 
 - **Image input.** 8-bit grey-scale images in the formats NBIS decodes. BMP and
   TIFF are not supported. Images without resolution information are processed
-  at 500 ppi.
+  at 500 ppi. A resolution stored in the image is used as it is, so an image
+  that carries a wrong value (for example the 72 or 96 dpi many image editors
+  write into JPEG files) is processed at that resolution and gives wrong
+  minutiae.
 - **Record content.** Finger position and impression type are written as 0
   (unknown), finger quality as 0, and minutia quality is the MINDTCT
-  reliability value. The CBEFF product identifier is a placeholder
-  (`0x00010001`).
-- **Extended data.** Ridge counts are written for image input. Core, delta and
-  ridge-count blocks are dropped in minutiae-to-minutiae conversions.
-- **Formats.** One finger view per image. ANSI INCITS 378-2009, ISO/IEC
-  19794-2:2011 and ANSI/NIST-ITL transactions are not produced.
+  reliability value times 100. The CBEFF product identifier is a placeholder
+  (`0x00010001`), also in ANSI records converted from ISO records, which have
+  none.
+- **Extended data.** Ridge counts are written for image input to `ANSI` only.
+  Core, delta and ridge-count blocks are dropped in conversions to ISO and in
+  minutiae-to-minutiae conversions, as in the BiomDI conversion routines.
+- **Compact card range.** `ISOCC` stores each coordinate in one byte, in units
+  of 0.1 mm, so it covers 25.5 mm by 25.5 mm from the top left corner (about
+  500 by 500 pixels at 500 ppi). Minutiae beyond that are left out of
+  `ISOCC` output.
+- **Card input.** `ISONC` and `ISOCC` records carry no image size or
+  resolution. ANSI or ISO records converted from them have an image size of
+  0 by 0 and the resolution given to `fmr2fmr_iso_card` (500 ppi by default).
+- **Formats.** One finger view per image, and the card formats hold one view.
+  ANSI INCITS 378-2009, ISO/IEC 19794-2:2011 and ANSI/NIST-ITL transactions
+  are not produced.
 - **Third-party code.** NBIS bundles old versions of libpng (1.2.23) and zlib
   (1.2.3) that have published vulnerabilities. Do not process untrusted files
   with elevated privileges.
 - **Accuracy.** No accuracy or interoperability measurements are published for
-  this code.
+  this code. The checks in `tests/` cover one sample image.
 
 ## License
 
