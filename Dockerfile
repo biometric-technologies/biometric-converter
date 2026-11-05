@@ -8,6 +8,7 @@ WORKDIR /opt/install
 RUN git clone https://github.com/biometric-technologies/nist-biometric-image-software-nbis.git &&  \
     chmod +x -R nist-biometric-image-software-nbis &&  \
     cd /opt/install/nist-biometric-image-software-nbis  \
+    && rm -rf openjp2/src/lib/openjp2/build  \
     && ./setup.sh /usr/local --64 --without-X11  \
     && make config  \
     && make it  \
