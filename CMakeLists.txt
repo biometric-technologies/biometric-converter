@@ -21,6 +21,8 @@ add_definitions(-D__NBIS_OPENJP2__=ON)
 # fix stdin for openjp2
 add_definitions(-DOPJ_STDINT_H=OFF)
 
+find_package(Threads REQUIRED)
+
 add_library(converter SHARED lib/converter.c)
 INSTALL(TARGETS converter LIBRARY DESTINATION ${INSTALL_LINK_DIR})
 INSTALL(FILES include/converter.h DESTINATION ${INSTALL_INCLUDE_DIR})
@@ -41,7 +43,8 @@ target_link_libraries(converter PRIVATE
         openjp2
         png
         z
-        m)
+        m
+        Threads::Threads)
 target_include_directories(converter PRIVATE include)
 
 add_executable(convert bin/convert.c)
