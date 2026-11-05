@@ -1,0 +1,26 @@
+# BiomDI reads ISO card records until the end of the data and does not free
+# the minutia record it allocated for the read that reached the end
+# (internal_read_fvmr() in fingerminutia/src/libfmr/fvmr.c): 48 bytes per
+# ISONC or ISOCC input record.
+{
+   biomdi-card-read-at-end
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   fun:new_fmd
+   fun:internal_read_fvmr
+   ...
+}
+
+# BiomDI does not free the ridge count record it allocated when a record
+# ends in the middle of the ridge count data (internal_read_rcdb() in
+# fingerminutia/src/libfmr/fedb.c): 32 bytes per truncated input record.
+{
+   biomdi-truncated-ridge-count
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   fun:new_rcd
+   fun:internal_read_rcdb
+   ...
+}
