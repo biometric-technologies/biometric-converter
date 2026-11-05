@@ -8,15 +8,18 @@ WORKDIR /opt/install
 RUN git clone https://github.com/biometric-technologies/nist-biometric-image-software-nbis.git &&  \
     chmod +x -R nist-biometric-image-software-nbis &&  \
     cd /opt/install/nist-biometric-image-software-nbis  \
-    && rm -rf openjp2/src/lib/openjp2/build  \
     && ./setup.sh /usr/local --64 --without-X11  \
     && make config  \
     && make it  \
     && make install LIBNBIS=no
 
+# BiomDI at a fixed commit, with the leak fix in third_party/
+COPY third_party/biomdi-free-unread-records.patch /opt/install/
 RUN git clone https://github.com/usnistgov/biomdi.git &&  \
     chmod +x -R biomdi &&  \
     cd /opt/install/biomdi  \
+    && git checkout acf76a030b0193faafb55fb469b27741b6aa8874  \
+    && git apply /opt/install/biomdi-free-unread-records.patch  \
     && make  \
     && make install
 

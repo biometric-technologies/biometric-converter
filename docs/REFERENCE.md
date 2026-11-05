@@ -154,6 +154,7 @@ it as arguments; `fmr2fmr` assumes 500 ppi for them.
 | `bin/convert.c` | Command-line tool |
 | `example/` | Minimal C program that converts `sample_image.wsq` to ANSI |
 | `tests/` | Test program and script, run by `ctest` |
+| `third_party/` | Patch for BiomDI (memory leak), applied before building it |
 | `web-service/` | REST web service (Kotlin, Spring Boot 2.7, WebFlux, JNA) |
 | `CMakeLists.txt` | Builds `libconverter.so` and `convert` |
 | `Dockerfile` | Image with the command-line tool |
@@ -180,7 +181,6 @@ Use the Biometric Technologies fork of NBIS:
 ```sh
 git clone https://github.com/biometric-technologies/nist-biometric-image-software-nbis.git
 cd nist-biometric-image-software-nbis
-rm -rf openjp2/src/lib/openjp2/build
 ./setup.sh /usr/local --without-X11 --64
 make config
 make it
@@ -193,19 +193,20 @@ those compilers, add `-fcommon` to the `CFLAGS` line of `rules.mak` after
 running `setup.sh`, and run `make clean` before `make it` if a build already
 failed. GCC 9 and earlier need no change.
 
-The fork contains a CMake cache for OpenJPEG in
-`openjp2/src/lib/openjp2/build` that was made in another directory; with it,
-`make config` stops with `CMakeCache.txt directory ... is different`. The
-`rm -rf` above removes it.
-
 ### 2. BiomDI
 
 ```sh
 git clone https://github.com/usnistgov/biomdi.git
 cd biomdi
+git checkout acf76a030b0193faafb55fb469b27741b6aa8874
+git apply ../biometric-converter/third_party/biomdi-free-unread-records.patch
 make
 sudo make install
 ```
+
+The patch frees records that BiomDI allocates and loses when a read stops
+in the middle of a record (every ISO card record is read that way). Without
+it the converter works, but leaks 48 bytes per card record read.
 
 BiomDI installs to `/usr/local` and finds the NBIS headers there. For another
 location, change `PREFIX` in `common/common.mk`.
@@ -244,7 +245,8 @@ reporting, eight threads converting at once) and the command-line tool. When
 the NBIS tools `mindtct` and `dwsq` and `python3` are on the path, it also
 compares the minutiae with `mindtct -m1` and checks PNG input with and without
 a resolution. `VALGRIND=1 tests/run.sh build` adds a few conversions under
-valgrind; `tests/valgrind.supp` lists two small leaks inside BiomDI.
+valgrind, which must report no leaks (BiomDI built with the patch in
+`third_party/`).
 
 ### 4. Web service
 
@@ -503,13 +505,14 @@ Also fixed while working on these:
   minutiae detection as raw pixels; images that are not 8-bit grey scale are
   now rejected, as `mindtct` does.
 - The CLI copied the `-ti` and `-to` values into 2-byte buffers.
+- BiomDI did not free the minutia record of the read that ends every `ISONC`
+  and `ISOCC` record (48 bytes per card record), nor a ridge count, core or
+  delta record whose read failed (32 bytes for a record that ends inside its
+  ridge count data). `third_party/biomdi-free-unread-records.patch` fixes
+  this; the Dockerfiles apply it, and valgrind now reports no leaks.
 
 ### Open
 
-- **Leaks in BiomDI.** BiomDI does not free one minutia record (48 bytes)
-  each time it reads an `ISONC` or `ISOCC` record, nor one ridge count record
-  (32 bytes) when a record ends inside its ridge count data.
-  `tests/valgrind.supp` lists both. No other leaks were found with valgrind.
 - **BiomDI angle rounding.** Converting `ANSI` to `ISOCC` maps angles just
   below 360 degrees to the largest compact card value (354.4 degrees) instead
   of 0, and `ISOCC` to `ANSI` rounds angles up by half a degree.

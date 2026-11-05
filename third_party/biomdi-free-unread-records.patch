@@ -1,0 +1,114 @@
+BiomDI: free minutiae and extended data records that were read only in part
+
+When a read stops in the middle of a record, the minutia (FMD), ridge count
+(RCD), core (CD) or delta (DD) record allocated for it was never added to its
+parent and never freed: 48 bytes for every ISO normal or compact card record
+read (the card formats are read until the data ends), and 32 bytes for a
+record that ends inside its ridge count data. The extended data block was
+also lost when it could not be read. Free each one where the read fails.
+
+Against usnistgov/biomdi acf76a0. Applied by the Dockerfiles; see
+docs/REFERENCE.md, "Building".
+
+diff --git a/fingerminutia/src/libfmr/fedb.c b/fingerminutia/src/libfmr/fedb.c
+index 82651be..469985a 100755
+--- a/fingerminutia/src/libfmr/fedb.c
++++ b/fingerminutia/src/libfmr/fedb.c
+@@ -627,10 +627,13 @@ internal_read_rcdb(FILE *fp, BDB *fmdb, struct ridge_count_data_block *rcdb)
+ 			ret = read_rcd(fp, rcd);
+ 		else
+ 			ret = scan_rcd(fmdb, rcd);
+-		if (ret == READ_EOF)
+-			return (READ_EOF);
+-		if (ret == READ_ERROR)
++		if (ret != READ_OK) {
++			/* Not yet added to the block, so free it here. */
++			free_rcd(rcd);
++			if (ret == READ_EOF)
++				return (READ_EOF);
+ 			ERR_OUT("Could not read ridge count data");
++		}
+ 
+ 		add_rcd_to_rcdb(rcd, rcdb);
+ 		block_length -= RIDGE_COUNT_DATA_LENGTH;
+@@ -954,10 +957,13 @@ internal_read_cddb(FILE *fp, BDB *fmdb, struct core_delta_data_block *cddb)
+ 			ERR_OUT("Could not allocate core data record");
+ 
+ 		ret = internal_read_cd(fp, fmdb, cd, cddb->core_type);
+-		if (ret == READ_EOF)
+-			return (READ_EOF);
+-		if (ret == READ_ERROR)
++		if (ret != READ_OK) {
++			/* Not yet added to the block, so free it here. */
++			free_cd(cd);
++			if (ret == READ_EOF)
++				return (READ_EOF);
+ 			ERR_OUT("Could not read core data record");
++		}
+ 		add_cd_to_cddb(cd, cddb);
+ 	}
+ 
+@@ -976,10 +982,13 @@ internal_read_cddb(FILE *fp, BDB *fmdb, struct core_delta_data_block *cddb)
+ 			ERR_OUT("Could not allocate delta data record");
+ 
+ 		ret = internal_read_dd(fp, fmdb, dd, cddb->delta_type);
+-		if (ret == READ_EOF)
+-			return (READ_EOF);
+-		if (ret == READ_ERROR)
++		if (ret != READ_OK) {
++			/* Not yet added to the block, so free it here. */
++			free_dd(dd);
++			if (ret == READ_EOF)
++				return (READ_EOF);
+ 			ERR_OUT("Could not read delta data record");
++		}
+ 		add_dd_to_cddb(dd, cddb);
+ 	}
+ 
+diff --git a/fingerminutia/src/libfmr/fvmr.c b/fingerminutia/src/libfmr/fvmr.c
+index ec72439..3f36c82 100755
+--- a/fingerminutia/src/libfmr/fvmr.c
++++ b/fingerminutia/src/libfmr/fvmr.c
+@@ -102,7 +102,13 @@ internal_read_fvmr(FILE *fp, BDB *fmdb,
+ 				add_fmd_to_fvmr(fmd, fvmr);
+ 				i++;
+ 				fvmr->number_of_minutiae++;
+-			} else if (ret == READ_EOF)
++				continue;
++			}
++			/* The minutia was not added to the record, so the
++			 * record will not free it.
++			 */
++			free_fmd(fmd);
++			if (ret == READ_EOF)
+ 				return READ_OK;
+ 			else 
+ 				ERR_OUT("Could not read FMD %d", i);
+@@ -151,10 +157,12 @@ internal_read_fvmr(FILE *fp, BDB *fmdb,
+ 			ret = scan_fmd(fmdb, fmd);
+ 		if (ret == READ_OK)
+ 			add_fmd_to_fvmr(fmd, fvmr);
+-		else if (ret == READ_EOF)
+-			goto eof_out;
+-		else 
++		else {
++			free_fmd(fmd);
++			if (ret == READ_EOF)
++				goto eof_out;
+ 			ERR_OUT("Could not read FMD %d", i);
++		}
+ 	}
+ 
+ 	// Read the extended data block, if it exists
+@@ -165,8 +173,10 @@ internal_read_fvmr(FILE *fp, BDB *fmdb,
+ 		ret = read_fedb(fp, fedb);
+ 	else
+ 		ret = scan_fedb(fmdb, fedb);
+-	if (ret == READ_ERROR)
++	if (ret == READ_ERROR) {
++		free_fedb(fedb);
+ 		ERR_OUT("Could not read extended data block");
++	}
+ 
+ 	// EOF is OK as we may have read a partial block
+ 	if (fedb->partial)

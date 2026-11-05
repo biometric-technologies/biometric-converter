@@ -6,8 +6,7 @@
 #
 # Uses example/sample_image.wsq. The comparison with NBIS mindtct and the
 # PNG checks need mindtct, dwsq and python3 on the PATH, and are skipped
-# otherwise. With VALGRIND=1 a few conversions also run under valgrind;
-# tests/valgrind.supp lists a known leak in BiomDI.
+# otherwise. With VALGRIND=1 a few conversions also run under valgrind.
 
 set -u
 
@@ -134,7 +133,6 @@ if [ "${VALGRIND:-0}" = 1 ]; then
                 "-i $WORK/sample.ISONC -ti ISONC -o $WORK/vg.iso -to ISO"; do
         # shellcheck disable=SC2086
         valgrind -q --leak-check=full --errors-for-leak-kinds=definite \
-            --suppressions="$SRC/tests/valgrind.supp" \
             --error-exitcode=99 "$CONVERT" $args >/dev/null 2>"$WORK/vg.log" ||
             { cat "$WORK/vg.log"; fail "valgrind: convert $args"; }
     done
