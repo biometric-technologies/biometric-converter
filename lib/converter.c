@@ -5,7 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <lfs.h>
+#ifndef CONVERTER_NO_IMAGE_DECODERS
 #include <imgdecod.h>
+#endif
 #include <stdint.h>
 #include <biomdi.h>
 #include <biomdimacro.h>
@@ -13,9 +15,11 @@
 #include <fmr2fmr.h>
 #include <time.h>
 #include <sys/param.h>
+#ifndef CONVERTER_NO_IMAGE_DECODERS
 #include <imgutil.h>
 #include <png_dec.h>
 #include <jpeg2k.h>
+#endif
 #include <pthread.h>
 #include <stdarg.h>
 
@@ -713,6 +717,11 @@ create_type1(RECORD **anrecord) {
     return -1;
 }
 
+// Image decoding needs the NBIS decoders and the libraries they use (libjpeg,
+// OpenJPEG, libpng, zlib). Builds that get pixels elsewhere, such as the
+// WebAssembly build, where the browser decodes the image, define
+// CONVERTER_NO_IMAGE_DECODERS and use raw2fmr() only.
+#ifndef CONVERTER_NO_IMAGE_DECODERS
 int scan_and_decode_image(unsigned char *idata, int ilen, int *oimg_type,
                           unsigned char **odata, int *olen,
                           int *ow, int *oh, int *od, int *oppi) {
@@ -909,6 +918,8 @@ read_image(unsigned char *indata, int ilen,
     err_out:
     return -1;
 }
+
+#endif // CONVERTER_NO_IMAGE_DECODERS
 
 static int
 read_minutiae_to_ansi_fmr(unsigned char *idata, int iw, int ih, int id, double ippmm,
@@ -1267,34 +1278,17 @@ write_fmr_to_buffer(struct finger_minutiae_record *fmr,
     return -1;
 }
 
-int img2fmr(unsigned char *idata, int ilen, char *otype, unsigned char **odata, int *olen) {
-
-    unsigned char *imdata = NULL;
-    int img_len;
-    int img_type;
-    int iw, ih, id, ippi;
-    double ippmm;
-    int out_type, rc;
+// Detect the minutiae in an 8-bit grey-scale image and write them as a record
+// of type out_type. Called with nbis_lock held for the detection only.
+static int
+pixels_to_fmr(unsigned char *pixels, int iw, int ih, double ippmm, int out_type,
+              unsigned char **odata, int *olen) {
     struct finger_minutiae_record *fmr = NULL;
     struct finger_minutiae_record *ofmr = NULL;
-    int ret = -1;
-
-    last_error[0] = '\0';
-    if ((odata == NULL) || (olen == NULL))
-        CONV_ERR("no output location given");
-    *odata = NULL;
-    *olen = 0;
-    if ((idata == NULL) || (ilen <= 0))
-        CONV_ERR("no input data");
-    if ((out_type = str_to_type(otype)) < 0)
-        CONV_ERR("unknown output type '%s' (use ANSI, ISO, ISONC or ISOCC)",
-                 otype != NULL ? otype : "");
+    int rc, ret = -1;
 
     pthread_mutex_lock(&nbis_lock);
-    rc = read_image(idata, ilen, &imdata, &img_len, &img_type,
-                    &iw, &ih, &id, &ippi, &ippmm);
-    if (rc == 0)
-        rc = read_minutiae_to_ansi_fmr(imdata, iw, ih, id, ippmm, &fmr);
+    rc = read_minutiae_to_ansi_fmr(pixels, iw, ih, 8, ippmm, &fmr);
     pthread_mutex_unlock(&nbis_lock);
     if (rc != 0)
         goto err_out;
@@ -1317,13 +1311,73 @@ int img2fmr(unsigned char *idata, int ilen, char *otype, unsigned char **odata, 
     ret = 0;
 
     err_out:
-    free(imdata);
     if (fmr != NULL)
         free_fmr(fmr);
     if (ofmr != NULL)
         free_fmr(ofmr);
     return ret;
 }
+
+// Check the output arguments and type shared by img2fmr() and raw2fmr().
+static int
+start_image_conversion(char *otype, unsigned char **odata, int *olen,
+                       int *out_type) {
+    last_error[0] = '\0';
+    if ((odata == NULL) || (olen == NULL))
+        CONV_ERR("no output location given");
+    *odata = NULL;
+    *olen = 0;
+    if ((*out_type = str_to_type(otype)) < 0)
+        CONV_ERR("unknown output type '%s' (use ANSI, ISO, ISONC or ISOCC)",
+                 otype != NULL ? otype : "");
+    return 0;
+
+    err_out:
+    return -1;
+}
+
+int raw2fmr(unsigned char *pixels, int width, int height, int ppi, char *otype,
+            unsigned char **odata, int *olen) {
+    int out_type;
+
+    if (start_image_conversion(otype, odata, olen, &out_type) != 0)
+        return -1;
+    if ((pixels == NULL) || (width <= 0) || (height <= 0)) {
+        set_error("no input image");
+        return -1;
+    }
+    if (ppi <= 0)
+        ppi = DEFAULT_PPI;
+    return pixels_to_fmr(pixels, width, height, ppi / (double) MM_PER_INCH,
+                         out_type, odata, olen);
+}
+
+#ifndef CONVERTER_NO_IMAGE_DECODERS
+int img2fmr(unsigned char *idata, int ilen, char *otype, unsigned char **odata, int *olen) {
+    unsigned char *imdata = NULL;
+    int img_len, img_type, iw, ih, id, ippi, out_type, rc;
+    double ippmm;
+
+    if (start_image_conversion(otype, odata, olen, &out_type) != 0)
+        return -1;
+    if ((idata == NULL) || (ilen <= 0)) {
+        set_error("no input data");
+        return -1;
+    }
+
+    // The decoders keep global state too
+    pthread_mutex_lock(&nbis_lock);
+    rc = read_image(idata, ilen, &imdata, &img_len, &img_type,
+                    &iw, &ih, &id, &ippi, &ippmm);
+    pthread_mutex_unlock(&nbis_lock);
+    if (rc != 0)
+        return -1;
+
+    rc = pixels_to_fmr(imdata, iw, ih, ippmm, out_type, odata, olen);
+    free(imdata);
+    return rc;
+}
+#endif // CONVERTER_NO_IMAGE_DECODERS
 
 int fmr2fmr(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
             char *in_type_str, char *out_type_str) {

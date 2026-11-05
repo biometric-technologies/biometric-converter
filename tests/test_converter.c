@@ -23,6 +23,7 @@
 #include <fmr.h>
 
 #include <converter.h>
+#include <wsq.h>
 
 #define NTYPES 4
 static const char *type_names[NTYPES] = {"ANSI", "ISO", "ISONC", "ISOCC"};
@@ -305,6 +306,33 @@ main(int argc, char *argv[]) {
             return 1;
         CHECK(minutiae(rec[t], rlen[t], t, m) >= 0, "img2fmr to %s: BiomDI cannot parse the result",
               type_names[t]);
+    }
+
+    // The test image is WSQ: decode it here and give raw2fmr() the pixels.
+    // It must write the same bytes as img2fmr() does for the file.
+    {
+        unsigned char *pixels;
+        int w, h, d, ppi, lossy;
+
+        if (wsq_decode_mem(&pixels, &w, &h, &d, &ppi, &lossy, image, ilen) == 0) {
+            printf("Pixels to minutiae records\n");
+            for (t = 0; t < NTYPES; t++) {
+                rc = raw2fmr(pixels, w, h, ppi, (char *) type_names[t], &out, &olen);
+                CHECK(rc == 0, "raw2fmr to %s: %s", type_names[t], converter_last_error());
+                if (rc == 0) {
+                    CHECK((olen == rlen[t]) && (memcmp(out, rec[t], olen) == 0),
+                          "raw2fmr to %s differs from img2fmr", type_names[t]);
+                    converter_free(out);
+                }
+            }
+            rc = raw2fmr(NULL, w, h, ppi, "ANSI", &out, &olen);
+            CHECK((rc == -1) && (out == NULL), "raw2fmr without pixels");
+            rc = raw2fmr(pixels, w, h, ppi, "XYZ", &out, &olen);
+            CHECK((rc == -1) && (out == NULL), "raw2fmr with an unknown type");
+            printf("  same records as img2fmr for %d x %d pixels at %d ppi\n", w, h, ppi);
+            free(pixels);
+        } else
+            printf("Pixels to minutiae records: skipped, the test image is not WSQ\n");
     }
 
     nref = minutiae(rec[0], rlen[0], 0, ref);

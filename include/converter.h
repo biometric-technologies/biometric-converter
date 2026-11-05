@@ -15,6 +15,12 @@
 /* Image (WSQ, JPEG, JPEG 2000, PNG, NIST IHead) to a minutiae record of type otype. */
 extern int img2fmr(unsigned char *idata, int ilen, char *otype, unsigned char **odata, int *olen);
 
+/* Already decoded 8-bit grey-scale image (one byte per pixel, rows from the top)
+ * at ppi pixels per inch (0 means 500) to a minutiae record of type otype.
+ * Gives the same record as img2fmr() for the same pixels. */
+extern int raw2fmr(unsigned char *pixels, int width, int height, int ppi, char *otype,
+                   unsigned char **odata, int *olen);
+
 /* Minutiae record of type in_type_str to type out_type_str. ISO card input is
  * taken to be at 500 ppi; use fmr2fmr_iso_card() to give its resolution. */
 extern int fmr2fmr(unsigned char *idata, int ilen, unsigned char **odata, int *olen,

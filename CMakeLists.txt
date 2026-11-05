@@ -73,7 +73,8 @@ INSTALL(TARGETS convert RUNTIME DESTINATION ${INSTALL_BIN_DIR})
 # Tests: run with 'ctest' (or 'make test') in the build directory
 enable_testing()
 add_executable(test_converter tests/test_converter.c)
-target_link_libraries(test_converter PRIVATE converter fmr biomdi Threads::Threads m)
+# wsq and its helpers decode the WSQ test image for the raw2fmr() check
+target_link_libraries(test_converter PRIVATE converter fmr biomdi wsq fet ioutil util Threads::Threads m)
 target_include_directories(test_converter PRIVATE include)
 add_test(NAME converter
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run.sh ${CMAKE_CURRENT_BINARY_DIR})

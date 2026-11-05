@@ -15,9 +15,9 @@ the tools of the system that will consume it.
 Developed by Iriscan (Biometric Technologies OÜ) — <https://www.iriscan.com>. The short introduction is in the [README](../README.md).
 
 Online demo: [Biometric Data Interchange](https://www.iriscan.com/biometric-data-interchange)
-converts fingerprint images and minutiae templates in the browser, using a
-WebAssembly build of the same NBIS and BiomDI based engine. That WebAssembly
-build is not part of this repository.
+converts fingerprint images and minutiae templates in the browser. It runs
+`lib/converter.c` compiled to WebAssembly (see [WebAssembly](#webassembly)),
+so it writes the same records as the library.
 
 > **Status.** The defects that made the output of earlier versions unusable
 > are fixed: minutiae are detected on the decoded image and written at their
@@ -292,8 +292,12 @@ Prebuilt images have been published on Docker Hub as
 
 ### WebAssembly
 
-This repository contains no WebAssembly build. The browser demo linked above
-uses a separate WebAssembly build that is not published here.
+The browser demo linked above compiles `lib/converter.c` with Emscripten and
+`-DCONVERTER_NO_IMAGE_DECODERS`, which leaves out the NBIS image decoders and
+`img2fmr`: the browser decodes the image and calls `raw2fmr` with the pixels.
+The build script and a test that compares its records byte for byte with the
+native `convert` are in the website repository,
+[`tools/bdi-wasm`](https://github.com/biometric-technologies/iriscan.com/tree/main/tools/bdi-wasm).
 
 ## Usage
 
@@ -332,6 +336,9 @@ library function `fmr2fmr_iso_card` or the web service.
 int img2fmr(unsigned char *idata, int ilen, char *otype,
             unsigned char **odata, int *olen);
 
+int raw2fmr(unsigned char *pixels, int width, int height, int ppi, char *otype,
+            unsigned char **odata, int *olen);
+
 int fmr2fmr(unsigned char *idata, int ilen, unsigned char **odata, int *olen,
             char *in_type_str, char *out_type_str);
 
@@ -346,6 +353,7 @@ void converter_free(void *data);
 | Function | Purpose |
 |---|---|
 | `img2fmr` | Image bytes (`idata`, `ilen`) to a minutiae record of type `otype` |
+| `raw2fmr` | An image that is already decoded: 8-bit grey-scale pixels, one byte each, rows from the top, at `ppi` pixels per inch (0 means 500). Gives the same record as `img2fmr` for the same pixels |
 | `fmr2fmr` | Minutiae record of type `in_type_str` to type `out_type_str`. ISO card input is taken to be at 500 ppi |
 | `fmr2fmr_iso_card` | As `fmr2fmr`, with the image resolution for ISO card inputs, which do not carry it. `iso_c_xres` and `iso_c_yres` are in pixels per centimetre, as in the record header (197 for 500 ppi); 0 means 197. They are ignored for other input types |
 | `converter_last_error` | Why the last call in the calling thread failed; an empty string after a successful call |
