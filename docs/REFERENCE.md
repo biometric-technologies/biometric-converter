@@ -256,6 +256,20 @@ cd web-service
 java -jar build/libs/web-service-0.0.2-SNAPSHOT.jar
 ```
 
+`build` runs the web service tests, which send requests to the service and
+compare its answers with direct calls to the installed `libconverter`. They are
+skipped when JNA cannot load the library, unless `CONVERTER_TESTS_REQUIRED`
+is set in the environment, in which case they fail.
+
+### Continuous integration
+
+`.github/workflows/build.yml` runs on every pull request and on pushes to
+`master`. It builds NBIS and BiomDI (with the patch) at fixed commits, the
+library, the command-line tool and the example, runs `ctest` and the valgrind
+checks, builds the web service and runs its tests against the installed
+library, and builds both Docker images and converts the sample in the
+command-line image. Nothing is published.
+
 The wrapper uses Gradle 7.4.1, which runs on JDK 11 to 17 (not on newer
 JDKs); the project targets Java 11. At run time the
 service loads `libconverter` through JNA from `/usr/local/lib` or the system
@@ -528,7 +542,6 @@ Also fixed while working on these:
   AN2K record it builds for every image conversion.
 - **Serialized image processing.** Image decoding and minutiae detection run
   one at a time across threads because NBIS keeps global state.
-- **Web service tests.** The web service has no automated tests.
 
 ## Limitations
 
