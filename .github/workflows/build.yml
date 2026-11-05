@@ -1,0 +1,135 @@
+name: Build and test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # NBIS fork and upstream BiomDI at fixed commits; the BiomDI leak fix in
+  # third_party/ is made against this commit.
+  NBIS_REF: 0c8f8f739868ba37105196d2c20e00afa115fb9c
+  BIOMDI_REF: acf76a030b0193faafb55fb469b27741b6aa8874
+
+jobs:
+  native:
+    name: Library, CLI, example and web service
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake valgrind
+
+      # NBIS takes several minutes to build. Its installed files and those of
+      # BiomDI are kept as one archive, rebuilt when a commit or the patch
+      # changes.
+      - name: Cache NBIS and BiomDI
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: ~/deps
+          key: deps-ubuntu-24.04-${{ env.NBIS_REF }}-${{ env.BIOMDI_REF }}-${{ hashFiles('third_party/*.patch') }}
+
+      - name: Build NBIS and BiomDI
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: |
+          touch /tmp/before-deps
+          sleep 1
+          git clone https://github.com/biometric-technologies/nist-biometric-image-software-nbis.git /tmp/nbis
+          cd /tmp/nbis
+          git checkout "$NBIS_REF"
+          chmod -R +x .
+          ./setup.sh /usr/local --without-X11 --64
+          # NBIS defines globals in headers, which GCC 10 and later reject
+          # without -fcommon (see docs/REFERENCE.md, Building)
+          sed -i -E 's/^(CFLAGS[[:space:]]*:=)/\1 -fcommon/' rules.mak
+          make config
+          make it
+          sudo make install LIBNBIS=no
+          git clone https://github.com/usnistgov/biomdi.git /tmp/biomdi
+          cd /tmp/biomdi
+          git checkout "$BIOMDI_REF"
+          git apply "$GITHUB_WORKSPACE/third_party/biomdi-free-unread-records.patch"
+          make
+          sudo make install
+          mkdir -p ~/deps
+          sudo find /usr/local -newer /tmp/before-deps \( -type f -o -type l \) -print0 |
+            sudo tar --null -cf ~/deps/deps.tar -T -
+          sudo chown "$USER" ~/deps/deps.tar
+
+      - name: Install NBIS and BiomDI from the cache
+        if: steps.deps.outputs.cache-hit == 'true'
+        run: sudo tar -xf ~/deps/deps.tar -C /
+
+      - name: Build the library and the command-line tool
+        run: |
+          sudo ldconfig
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build -j"$(nproc)"
+
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Tests under valgrind
+        run: |
+          VALGRIND=1 tests/run.sh build
+          valgrind -q --leak-check=full --errors-for-leak-kinds=definite,indirect,possible \
+            --error-exitcode=99 build/test_converter example/sample_image.wsq > /dev/null
+
+      - name: Install the library
+        run: |
+          sudo cmake --install build
+          sudo ldconfig
+
+      - name: Build and run the example
+        run: |
+          cmake -S example -B example/build
+          cmake --build example/build
+          # The example reads ../sample_image.wsq and writes ../ansi.res
+          cd example/build
+          ./example
+          test -s ../ansi.res
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The web service tests call the installed libconverter through JNA;
+      # CONVERTER_TESTS_REQUIRED makes them fail rather than skip when it
+      # cannot be loaded.
+      - name: Web service build and tests
+        working-directory: web-service
+        env:
+          CONVERTER_TESTS_REQUIRED: '1'
+        run: ./gradlew --no-daemon build
+
+      - name: Web service test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-service-tests
+          path: web-service/build/reports/tests
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the command-line image
+        run: docker build -f Dockerfile -t biometric-converter-cli:ci .
+
+      - name: Convert the sample in the image
+        run: |
+          docker run --rm -v "$PWD/example:/opt/work" biometric-converter-cli:ci \
+            convert -i sample_image.wsq -ti WSQ -o docker.iso -to ISO
+          # An ISO/IEC 19794-2 record starts with "FMR\0"
+          test "$(head -c 3 example/docker.iso)" = FMR
+
+      - name: Build the web service base image
+        run: docker build -f DockerfileWs -t biometric-converter-ws-base:ci .
