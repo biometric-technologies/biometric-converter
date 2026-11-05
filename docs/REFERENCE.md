@@ -486,7 +486,7 @@ Pull requests are welcome; please:
   adapted from.
 
 Other questions can be sent to the
-[Biometric Technologies project maintainers](mailto:info@iriscan.net).
+[Biometric Technologies project maintainers](mailto:info@iriscan.com).
 
 ---
 
