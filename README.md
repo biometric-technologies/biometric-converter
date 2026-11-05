@@ -66,6 +66,12 @@ The engine behind Iriscan's [Biometric Data Interchange](https://www.iriscan.com
 
 GNU General Public License v3.0, see [LICENSE.md](LICENSE.md). NBIS and BiomDI are works of the US government and public domain in the United States; the bundled OpenJPEG, libjpeg, libpng and zlib keep their own licenses (listed in the reference). For a closed-source product, Iriscan offers a [commercial license](https://www.iriscan.com/commercial-license).
 
+## Funding
+
+This converter was developed by Iriscan (Biometric Technologies OÜ) in 2022 within [NGI DAPSI](https://www.ngi.eu/ngi-projects/ngi-dapsi/), a program of the EU's Next Generation Internet initiative for data portability and services incubation.
+
+This project has received funding from the European Union's Horizon 2020 research and innovation programme under Grant Agreement no 871498.
+
 ## Contact
 
-Bugs and ideas: [open an issue](https://github.com/biometric-technologies/biometric-converter/issues). Everything else: info@iriscan.net, https://www.iriscan.com.
+Bugs and ideas: [open an issue](https://github.com/biometric-technologies/biometric-converter/issues). Everything else: info@iriscan.com, https://www.iriscan.com.
